@@ -1,0 +1,29 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static %}
+
+{% block breadcrumbs %}
+  <div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+    &rsaquo;
+    <a href="{% url 'admin:WordAI_Publisher_keyword_changelist' %}">{% trans 'Keywords' %}</a>
+    &rsaquo;
+    {% trans 'Upload CSV' %}
+  </div>
+{% endblock %}
+
+{% block content %}
+  <div id="content-main">
+    <div class="module aligned" style="max-width: 500px; margin: 0 auto; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px #eee; padding: 2em;">
+      <h1 style="margin-top: 0; font-size: 1.7em; color: #20435c;">{% trans 'Upload CSV' %}</h1>
+      <form method="post" enctype="multipart/form-data" class="form-horizontal">
+        {% csrf_token %}
+        <fieldset class="module aligned">
+          {{ form.as_p }}
+        </fieldset>
+        <div class="submit-row" style="text-align: right;">
+          <input type="submit" value="{% trans 'Upload' %}" class="default" style="background: #20435c; color: #fff; border: none; padding: 8px 20px; border-radius: 4px; font-size: 1em; cursor: pointer;">
+        </div>
+      </form>
+    </div>
+  </div>
+{% endblock %} 

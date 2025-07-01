@@ -1,0 +1,164 @@
+{% extends "admin/change_list.html" %}
+
+{% block object-tools-items %}
+    <li>
+        <a href="upload-csv/" class="addlink">Upload CSV</a>
+    </li>
+    {{ block.super }}
+{% endblock %}
+
+{% block extrahead %}
+    {{ block.super }}
+ 
+<style>
+#generateContentModal {
+    display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100vw; height: 100vh;
+    background: rgba(0,0,0,0.4); align-items: center; justify-content: center;
+}
+#generateContentModal .modal-content {
+    background: #fff; padding: 30px; border-radius: 8px; min-width: 350px; max-width: 90vw;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+}
+#generateContentModal label { display: block; margin-top: 10px; }
+#generateContentModal input, #generateContentModal select { width: 100%; margin-top: 5px; }
+#generateContentModal .modal-actions { margin-top: 20px; text-align: right; }
+.spinner {
+  border: 6px solid #f3f3f3;
+  border-top: 6px solid #3498db;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+  display: inline-block;
+}
+@keyframes spin {
+  0% { transform: rotate(0deg);}
+  100% { transform: rotate(360deg);}
+}
+</style>
+{% endblock %}
+
+{% block content %}
+{{ block.super }}
+<div id="generateContentModal">
+  <div class="modal-content">
+    <h3>Generate Post</h3>
+    <form id="generateContentForm">
+      <input type="hidden" id="modal-keyword-id" name="keyword_id" />
+      <label for="prompt_id">Select Prompt:</label>
+      <select name="prompt_id" id="prompt_id">
+          {% for prompt in prompts %}
+              <option value="{{ prompt.prompt_id }}">{{ prompt.prompt_id }}</option>
+          {% endfor %}
+      </select>
+      <label for="modal-version-count">Number of style Revisions:</label>
+      <input type="number" id="modal-version-count" name="version_count" min="1" value="10" required />
+      <div class="modal-actions">
+        <button type="button" onclick="closeGenerateModal()">Cancel</button>
+        <button type="submit">Generate</button>
+      </div>
+    </form>
+    <div id="generate-loader" style="display:none; text-align:center; margin-top:20px;">
+      <div class="spinner" style="margin:auto;"></div>
+      <div style="margin-top:10px;">Generating versions, please wait...</div>
+    </div>
+  </div>
+</div>
+<script>
+// Modal logic
+function openGenerateModal(keywordId) {
+    document.getElementById('modal-keyword-id').value = keywordId;
+    document.getElementById('generateContentModal').style.display = 'flex';
+    fetchPrompts();
+}
+function closeGenerateModal() {
+    document.getElementById('generateContentModal').style.display = 'none';
+}
+// Fetch prompts for dropdown
+function fetchPrompts() {
+    fetch('/admin/WordAI_Publisher/prompt/?format=json')
+      .then(resp => resp.json())
+      .then(data => {
+        const select = document.getElementById('prompt_id');
+        select.innerHTML = '';
+        (data.results || data).forEach(function(prompt) {
+          const opt = document.createElement('option');
+          opt.value = prompt.id || prompt.prompt_id || prompt.pk;
+          opt.textContent = prompt.prompt_id || prompt.id;
+          select.appendChild(opt);
+        });
+      });
+}
+// Attach modal to each Generate Content button
+window.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('a.button, a.btn, input[type=button][value="Generate Content"]').forEach(function(btn) {
+        if (btn.textContent && btn.textContent.trim() === 'Generate Content') {
+            btn.addEventListener('click', function(e) {
+                e.preventDefault();
+                // Try to get keyword id from row or href
+                let keywordId = null;
+                if (btn.closest('tr')) {
+                    const link = btn.closest('tr').querySelector('a');
+                    if (link && link.href) {
+                        const match = link.href.match(/(\d+)\/?$/);
+                        if (match) keywordId = match[1];
+                    }
+                }
+                if (!keywordId && btn.href) {
+                    const match = btn.href.match(/(\d+)\/?$/);
+                    if (match) keywordId = match[1];
+                }
+                if (keywordId) openGenerateModal(keywordId);
+            });
+        }
+    });
+    // Modal form submit
+    document.getElementById('generateContentForm').onsubmit = function(e) {
+        e.preventDefault();
+        const form = e.target;
+        const loader = document.getElementById('generate-loader');
+        loader.style.display = 'block';
+        const data = new FormData(form);
+        Array.from(form.elements).forEach(el => el.disabled = true);
+
+        fetch('/admin/WordAI_Publisher/keyword/ajax-generate-versions/', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+            body: data
+        })
+        .then(resp => resp.json())
+        .then(data => {
+            loader.style.display = 'none';
+            Array.from(form.elements).forEach(el => el.disabled = false);
+            if (data.success) {
+                alert(data.message);
+                closeGenerateModal();
+                window.location.reload();
+            } else {
+                alert(data.message);
+            }
+        })
+        .catch(err => {
+            loader.style.display = 'none';
+            Array.from(form.elements).forEach(el => el.disabled = false);
+            alert('Error: ' + err);
+        });
+    };
+    // Helper to get CSRF token
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,94 @@
+<style>
+    .preview-article {
+        max-width: 700px;
+        margin: 30px auto;
+        font-family: 'Segoe UI', Arial, sans-serif;
+        background: #fff;
+        padding: 32px 32px 40px 32px;
+        border-radius: 12px;
+        box-shadow: 0 2px 16px rgba(0,0,0,0.07);
+    }
+    .preview-title {
+        font-size: 2.2em;
+        font-weight: bold;
+        margin-bottom: 18px;
+        line-height: 1.2;
+        color: #222;
+        text-align: center;
+    }
+    .preview-featured-image {
+        display: block;
+        margin: 0 auto 28px auto;
+        max-width: 100%;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .preview-intro {
+        font-size: 1.15em;
+        color: #444;
+        margin-bottom: 32px;
+        text-align: justify;
+    }
+    .preview-style-section {
+        margin-bottom: 40px;
+    }
+    .preview-style-heading {
+        font-size: 1.4em;
+        font-weight: 600;
+        margin: 32px 0 12px 0;
+        color: #1a1a1a;
+        letter-spacing: 0.01em;
+    }
+    .preview-style-image {
+        display: block;
+        margin: 0 auto 18px auto;
+        max-width: 90%;
+        border-radius: 6px;
+        box-shadow: 0 1px 6px rgba(0,0,0,0.07);
+    }
+    .preview-style-content {
+        font-size: 1.05em;
+        color: #333;
+        text-align: justify;
+    }
+    .preview-conclusion {
+        margin-top: 40px;
+        padding-top: 18px;
+        border-top: 1px solid #eee;
+        font-size: 1.1em;
+        color: #222;
+        font-style: italic;
+    }
+    </style>
+    
+    <div class="preview-article">
+        <div class="preview-title">{{ post.generated_title|safe }}</div>
+        
+        {% if post.featured_image %}
+            <img src="{{ post.featured_image.url }}" class="preview-featured-image" />
+        {% endif %}
+    
+        <div class="preview-intro">
+            {{ post.generated_intro|safe }}
+        </div>
+    
+        {% for section in style_sections %}
+            <div class="preview-style-section">
+                <div class="preview-style-heading">{{ section.heading|safe }}</div>
+                
+                {% if section.image_url %}
+                    <img src="{{ section.image_url }}" class="preview-style-image" />
+                {% else %}
+                    <p style="color: red; font-size: 12px;">
+                        ⚠ No image found for: "{{ section.heading|striptags }}"
+                    </p>
+                {% endif %}
+    
+                <div class="preview-style-content">{{ section.content|safe }}</div>
+            </div>
+        {% endfor %}
+    
+        <div class="preview-conclusion">
+            {{ post.generated_conclusion|safe }}
+        </div>
+    </div>

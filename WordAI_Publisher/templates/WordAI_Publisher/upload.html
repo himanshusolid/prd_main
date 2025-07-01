@@ -1,0 +1,170 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>CSV Keyword Uploader</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #f9f9f9, #e6e9f0);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Poppins', sans-serif;
+        }
+        .upload-container {
+            background: #ffffff;
+            padding: 40px 30px;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 450px;
+            text-align: center;
+            transition: all 0.3s ease-in-out;
+        }
+        .upload-container:hover {
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+        }
+        .logo {
+            height: 80px;
+            margin-bottom: 20px;
+        }
+        h3 {
+            margin-bottom: 20px;
+            font-weight: 600;
+            font-size: 24px;
+            color: #333;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .custom-file-upload {
+            border: 2px dashed #007bff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 30px 20px;
+            cursor: pointer;
+            border-radius: 15px;
+            width: 100%;
+            transition: all 0.3s ease-in-out;
+            background-color: #f8f9fa;
+            color: #007bff;
+        }
+        .custom-file-upload:hover {
+            background-color: #e2e6ea;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        #file-name {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #555;
+        }
+        button.btn-primary {
+            width: 100%;
+            padding: 12px 0;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 30px;
+            background-color: #007bff;
+            border: none;
+            transition: background-color 0.3s;
+            margin-top: 20px;
+        }
+        button.btn-primary:hover {
+            background-color: #0056b3;
+        }
+        #loader {
+            display: none;
+            margin-top: 20px;
+        }
+        .messages {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="upload-container">
+        <img src="{% static 'logo.png' %}" class="logo" alt="Brand Logo">
+        <h3>Upload Your CSV File</h3>
+
+        <!-- Messages -->
+        <div class="messages">
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        </div>
+
+        <!-- Upload Form -->
+        <form method="post" enctype="multipart/form-data" onsubmit="showLoader()">
+            {% csrf_token %}
+            <label for="file-upload" class="custom-file-upload" id="drop-area">
+                <span id="drop-text">Select your CSV file here</span>
+                <span id="file-name"></span>
+            </label>
+            {{ form.csv_file }}
+            <button type="submit" class="btn btn-primary">Upload CSV</button>
+        </form>
+
+        <!-- Loader -->
+        <div id="loader" class="text-center">
+            <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-3">Uploading, please wait...</p>
+        </div>
+    </div>
+
+    <script>
+        function showLoader() {
+            document.getElementById('loader').style.display = 'block';
+        }
+
+        const realFileInput = document.querySelector('input[type="file"]');
+        const dropArea = document.getElementById('drop-area');
+        const dropText = document.getElementById('drop-text');
+        const fileName = document.getElementById('file-name');
+
+        dropArea.addEventListener('click', () => {
+            realFileInput.click();
+        });
+
+        realFileInput.addEventListener('change', function() {
+            if (realFileInput.files.length > 0) {
+                fileName.innerText = realFileInput.files[0].name;
+            }
+        });
+
+        // Drag and Drop functionality
+        dropArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropArea.style.background = '#e2e6ea';
+        });
+
+        dropArea.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            dropArea.style.background = '#f8f9fa';
+        });
+
+        dropArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            realFileInput.files = e.dataTransfer.files;
+            fileName.innerText = realFileInput.files[0].name;
+            dropArea.style.background = '#f8f9fa';
+        });
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

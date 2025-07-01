@@ -1,0 +1,81 @@
+{% extends "admin/change_form.html" %}
+{% load static %}
+
+{% block content %}
+{{ block.super }}
+<style>
+#id_generated_title, #id_meta_title {
+    width: 950px !important;
+    height: 44px !important;
+    min-height: 44px !important;
+    max-height: 44px !important;
+    resize: none;
+}
+#id_meta_description {
+    width: 951px !important;
+    height: 85px !important;
+    min-height: 85px !important;
+    max-height: 85px !important;
+    resize: none;
+}
+</style>
+
+{# Move the Style Images preview section after the Generated style section field #}
+<script>
+window.addEventListener('DOMContentLoaded', function() {
+    var styleImagesSection = document.querySelector('[data-style-images-section]');
+    var styleSectionField = document.querySelector('#id_generated_style_section');
+    if (styleImagesSection && styleSectionField) {
+        // Insert after the style section field's parent (form row)
+        var parentRow = styleSectionField.closest('.form-row, .form-group');
+        if (parentRow && parentRow.nextSibling) {
+            parentRow.parentNode.insertBefore(styleImagesSection, parentRow.nextSibling);
+        } else if (parentRow) {
+            parentRow.parentNode.appendChild(styleImagesSection);
+        }
+    }
+
+    // Move the featured image preview below the featured image field
+    var featuredImageSection = document.querySelector('[data-featured-image-section]');
+    var featuredImageField = document.querySelector('#id_featured_image');
+    if (featuredImageSection && featuredImageField) {
+        var parentRow = featuredImageField.closest('.form-row, .form-group');
+        if (parentRow && parentRow.nextSibling) {
+            parentRow.parentNode.insertBefore(featuredImageSection, parentRow.nextSibling);
+        } else if (parentRow) {
+            parentRow.parentNode.appendChild(featuredImageSection);
+        }
+    }
+});
+</script>
+
+<div data-featured-image-section>
+{% if original.featured_image %}
+  <div style="margin: 18px 0 10px 0;">
+    <label><strong>Featured Image Preview:</strong></label><br>
+    <img src="{{ original.featured_image.url }}" alt="Featured Image" style="max-width: 300px; max-height: 200px; border: 1px solid #ccc; border-radius: 8px; margin-top: 6px;" />
+  </div>
+{% endif %}
+</div>
+
+<div data-style-images-section>
+{% if original.style_images %}
+  <div style="margin-top: 30px;">
+    <label><strong>Style Images:</strong></label>
+    <div style="display: flex; flex-wrap: wrap; gap: 16px;">
+      {% for style, url in original.style_images.items %}
+        {% if url %}
+          <div style="text-align: center;">
+            <a href="{{ url }}" target="_blank">
+              <img src="{{ url }}" alt="{{ style }}" style="max-width: 120px; max-height: 120px; border: 1px solid #ccc; border-radius: 8px; margin-bottom: 6px;" />
+            </a>
+            <div style="font-size: 13px; margin-top: 2px;">{{ style }}</div>
+          </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+{% endif %}
+</div>
+
+{% endblock %}

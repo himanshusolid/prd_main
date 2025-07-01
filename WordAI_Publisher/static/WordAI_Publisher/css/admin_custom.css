@@ -1,0 +1,298 @@
+/* WordAI_Publisher/static/WordAI_Publisher/css/admin_custom.css */
+
+/* Admin Header Styling */
+#header {
+    background: #20435c; /* Dark blue from the logo */
+    color: #fff;
+}
+
+#header a {
+    color: #fff;
+}
+
+/* Removed redundant #site-name a rules as logo is handled by <img> in base_site.html */
+
+.wordpress-status-message {
+    margin: 1em 0;
+    padding: 1em;
+    border-radius: 6px;
+}
+
+.wordpress-status-success {
+    background: #d4edda;
+    border: 1px solid #c3e6cb;
+    color: #155724;
+}
+
+.wordpress-status-error {
+    background: #f8d7da;
+    border: 1px solid #f5c6cb;
+    color: #721c24;
+}
+
+/* Loader Styles (moved from template) */
+.loader-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.8);
+    z-index: 9999;
+}
+.loader-content {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+}
+.loader-spinner {
+    border: 5px solid #f3f3f3;
+    border-top: 5px solid #3498db;
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 20px;
+}
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Message Styles (moved from template) */
+.message {
+    padding: 10px;
+    margin: 10px 0;
+    border-radius: 4px;
+}
+.success { background-color: #dff0d8; color: #3c763d; }
+.error { background-color: #f2dede; color: #a94442; }
+
+/* --- New Design for Generated Content Page --- */
+
+/* Main Content Area */
+#content-main {
+    /* max-width: 1200px; */ /* Max width for the whole content area */
+    margin: 20px auto; /* Center content with top/bottom margin */
+    padding: 0 20px; /* Horizontal padding */
+    box-sizing: border-box;
+}
+
+/* Module Cards */
+.module {
+    background: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-radius: 10px; /* More rounded corners */
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08); /* More prominent shadow */
+    margin-bottom: 30px; /* Increased space between modules */
+    padding: 25px 30px; /* More internal padding */
+}
+
+.module h2 {
+    font-size: 1.6em; /* Larger, more impactful headings */
+    color: #20435c; /* Changed to a deeper blue color */
+    background-color: transparent; /* Ensure no background */
+    border-bottom: none; /* Remove border-bottom */
+    padding-bottom: 0; /* Remove padding if border-bottom is removed */
+    margin-bottom: 25px;
+    font-weight: 600; /* Semi-bold */
+    text-align: center; /* Center the heading for a cleaner look */
+}
+
+/* Flex Container for side-by-side layout */
+.flex-container {
+    display: flex;
+    align-items: flex-start;
+    gap: 30px; /* Increased space between columns */
+    margin-bottom: 20px;
+    flex-wrap: wrap; /* Allow wrapping on smaller screens */
+}
+
+.flex-left {
+    flex: 1; /* Allow left to grow */
+    min-width: 400px; /* Ensure content is readable */
+    max-width: 70%; /* Limit maximum width */
+    box-sizing: border-box;
+}
+
+.flex-right {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 15px; /* Space between buttons */
+    padding-top: 35px; /* Align buttons visually with prompts/content */
+}
+
+/* Form Row elements */
+.form-row {
+    margin-bottom: 20px; /* Consistent spacing between form elements */
+}
+
+.form-row label {
+    display: block;
+    font-weight: 600; /* Semi-bold labels */
+    margin-bottom: 8px; /* Space between label and input */
+    color: #444;
+    font-size: 0.95em;
+}
+
+.form-row p {
+    font-size: 1em;
+    line-height: 1.6;
+    color: #666;
+}
+
+/* Input fields and Textareas */
+.flex-left .form-row input[type="text"],
+.flex-left .form-row textarea {
+    width: 100%;
+    padding: 12px 15px;
+    border: 1px solid #d1d1d1;
+    border-radius: 6px;
+    font-size: 1em;
+    color: #333;
+    background-color: #fcfcfc;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    box-sizing: border-box;
+}
+
+.flex-left .form-row input[type="text"]:focus,
+.flex-left .form-row textarea:focus {
+    border-color: #007bff; /* Highlight on focus */
+    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.25); /* Subtle focus ring */
+    outline: none;
+}
+
+/* Buttons */
+.button {
+    display: inline-block;
+    padding: 14px 28px; /* Increased padding for a chunkier look */
+    font-size: 1.2em; /* Slightly larger text */
+    font-weight: 700; /* Ensure bolder text for all buttons */
+    text-align: center;
+    text-decoration: none;
+    cursor: pointer;
+    border: none;
+    border-radius: 6px;
+    background-color: #007bff; /* Primary blue */
+    color: white;
+    transition: background-color 0.3s ease, box-shadow 0.3s ease, transform 0.2s ease;
+    white-space: nowrap; /* Prevent text wrapping on buttons */
+}
+
+.button:hover {
+    background-color: #0056b3; /* Darker blue on hover */
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+    transform: translateY(-2px); /* Slight lift effect */
+}
+
+/* New: Outline Button for secondary actions like "Preview Changes" or "Show/Hide" */
+.button-outline {
+    background-color: transparent;
+    border: 1px solid #007bff; /* Blue border */
+    color: #007bff; /* Blue text */
+    font-weight: 600; /* Slightly less bold than primary */
+}
+
+.button-outline:hover {
+    background-color: #e0f2ff; /* Light blue background on hover */
+    box-shadow: none; /* Remove shadow if not desired for outline buttons */
+    transform: none; /* No lift effect for outline buttons */
+}
+
+.button-primary-action {
+    background-color: #28a745; /* Green for primary generation action */
+    color: white;
+}
+
+.button-primary-action:hover {
+    background-color: #218838; /* Darker green on hover */
+}
+
+.button-publish {
+    background-color: #0073aa; /* Deeper blue, similar to WordPress primary buttons */
+    color: white;
+    font-weight: 700; /* Bolder text for emphasis */
+    border: 1px solid #005177; /* Subtle border for depth */
+}
+
+.button-publish:hover {
+    background-color: #005177;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    transform: translateY(-1px); /* Slight lift effect on hover */
+}
+
+/* Specific styling for the text prompt display */
+.form-row.field-text_prompt p,
+.form-row.field-image_prompt p {
+    background-color: #f8f8f8;
+    border: 1px solid #e1e1e1;
+    padding: 15px;
+    border-radius: 6px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; /* More modern font */
+    color: #333;
+    line-height: 1.7;
+    font-size: 0.95em;
+}
+
+/* Image display */
+.form-row.field-generated_image_url {
+    overflow-x: auto;
+    padding: 15px 0;
+    text-align: center; /* Center the image */
+}
+
+.form-row.field-generated_image_url img {
+    display: block;
+    width: auto !important; /* Allow image to size based on its intrinsic size or max-width */
+    max-width: 100% !important; /* Ensure image fits within its container */
+    height: auto !important;
+    margin: 0 auto; /* Center the image */
+    border-radius: 8px; /* Rounded corners for images */
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); /* Subtle shadow for images */
+}
+
+/* Global image sizing for content area to prevent cut-off */
+#content-main img {
+    max-width: 100% !important;
+    height: auto !important;
+    display: block;
+}
+
+/* WordPress Status message to match new message style */
+.module h2 + .form-row {
+    margin-top: 0;
+}
+
+/* New: Styles for individual content sections (replacing tabs) */
+.section-wrapper {
+    background: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-radius: 10px;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.05);
+    margin-bottom: 25px; /* Space between sections */
+    padding: 20px 25px;
+}
+
+.section-wrapper .flex-container {
+    margin-bottom: 0; /* Remove extra margin if flex-container is inside section-wrapper */
+}
+
+.section-heading {
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+.section-heading h3 {
+    font-size: 1.4em; /* Slightly smaller than module h2 */
+    color: #444;
+    font-weight: 600;
+    margin: 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #f0f0f0;
+} 

@@ -1,0 +1,79 @@
+{% extends "admin/change_list.html" %}
+{% block extrahead %}
+{{ block.super }}
+<style>
+.spinner {
+  border: 6px solid #f3f3f3;
+  border-top: 6px solid #3498db;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+  display: inline-block;
+}
+@keyframes spin {
+  0% { transform: rotate(0deg);}
+  100% { transform: rotate(360deg);}
+}
+#wp-loader {
+  display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:9999;
+  background: rgba(255,255,255,0.8); padding: 30px 50px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+  text-align: center;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+{{ block.super }}
+<div id="wp-loader">
+  <div class="spinner"></div>
+  <div style="margin-top:10px;">Pushing to WordPress...</div>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.push-to-wp-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var postId = btn.getAttribute('data-post-id');
+            var loader = document.getElementById('wp-loader');
+            loader.style.display = 'block';
+            fetch('/admin/WordAI_Publisher/post/push-to-wordpress/' + postId + '/', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': getCookie('csrftoken')
+                }
+            })
+            .then(response => response.text())
+            .then(data => {
+                loader.style.display = 'none';
+                if (section === 'featured_image' && data.image_url) {
+                    const img = document.getElementById('featured-image-preview');
+                    if (img) {
+                        img.src = data.image_url;
+                        img.style.display = 'block';
+                    }
+                }
+                window.location.reload();
+            })
+            .catch(error => {
+                loader.style.display = 'none';
+                alert('Error: ' + error);
+            });
+        });
+    });
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+});
+</script>
+{% endblock %} 
