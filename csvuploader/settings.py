@@ -36,6 +36,7 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['prdmain-ubnub.kinsta.app']
 
+CSRF_TRUSTED_ORIGINS = ['https://prdmain-ubnub.kinsta.app']
 
 # Application definition
 
