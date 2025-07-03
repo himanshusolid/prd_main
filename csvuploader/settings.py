@@ -97,8 +97,8 @@ DATABASES = {
         'NAME': 'content_automation',
         'USER': 'prd_user',
         'PASSWORD': 'mY2=bK7=eT4+mJ8+jK7-',
-        'HOST': 'contentautomation-lr1o6-mysql.contentautomation-lr1o6.svc.cluster.local',
-        'PORT': '3306',
+        'HOST': 'us-east4-001.proxy.kinsta.app',
+        'PORT': '30538',
     }
 }
 
