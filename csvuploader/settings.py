@@ -20,10 +20,10 @@ from django.utils.decorators import method_decorator
 import requests
 from django.core.files.base import ContentFile
 from django.contrib import admin
-
+from dotenv import load_dotenv
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-
+load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/3.2/howto/deployment/checklist/
@@ -34,9 +34,10 @@ SECRET_KEY = 'django-insecure-if@cu3cz)hm1h3_qd3b)#eqat#k6vct(1fsat5(z=u#r2rmtaf
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['prdmain-ubnub.kinsta.app']
-
-CSRF_TRUSTED_ORIGINS = ['https://prdmain-ubnub.kinsta.app']
+ALLOWED_HOSTS = ['prdmain-ubnub.kinsta.app', '127.0.0.1', 'localhost']
+CSRF_TRUSTED_ORIGINS = [
+    'https://prdmain-ubnub.kinsta.app'
+]
 
 # Application definition
 
@@ -92,17 +93,17 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 # Database
 # https://docs.djangoproject.com/en/3.2/ref/settings/#databases
 
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'content_automation',
-        'USER': 'prd_user',
-        'PASSWORD': 'mY2=bK7=eT4+mJ8+jK7-',
-        'HOST': 'us-east4-001.proxy.kinsta.app',
-        'PORT': '30538',
+        'NAME': os.environ.get('DB_NAME', 'default_db_name'),
+        'USER': os.environ.get('DB_USER', 'default_user'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', 'default_password'),
+        'HOST': os.environ.get('DB_HOST', '127.0.0.1'),
+        'PORT': os.environ.get('DB_PORT', '3306'),
     }
 }
-
 
 # Password validation
 # https://docs.djangoproject.com/en/3.2/ref/settings/#auth-password-validators
@@ -155,12 +156,13 @@ ADMIN_SITE_HEADER = '<img src="https://www.fashionbeans.com/wp-content/uploads/2
 ADMIN_SITE_TITLE = "FashionBeans Admin"
 ADMIN_INDEX_TITLE = "Content Management"
 
-OPENAI_API_KEY = "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"
-WORDPRESS_API_URL_MEDIA ="https://ieghpqrlf6.wpdns.site/wp-json/wp/v2/media"
-WORDPRESS_API_URL = "https://ieghpqrlf6.wpdns.site/wp-json/wp/v2/posts"
-WORDPRESS_USERNAME = "Himanshu"
-WORDPRESS_APPLICATION_PASSWORD = "G2zl vWlX ow81 G6IJ A6QL CN1p"
-WORDPRESS_JWT_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwczovL2llZ2hwcXJsZjYud3BkbnMuc2l0ZSIsImlhdCI6MTc1MDc2MzQ5MCwibmJmIjoxNzUwNzYzNDkwLCJleHAiOjE3NTEzNjgyOTAsImRhdGEiOnsidXNlciI6eyJpZCI6Ijg2OCJ9fX0.ot9YNnk9Omk8c5T-1N6s3ForwCCGygf8WCERGyRjllo"
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
+WORDPRESS_API_URL_MEDIA = os.environ.get('WORDPRESS_API_URL_MEDIA')
+WORDPRESS_API_URL = os.environ.get('WORDPRESS_API_URL')
+WORDPRESS_USERNAME = os.environ.get('WORDPRESS_USERNAME')
+WORDPRESS_APPLICATION_PASSWORD = os.environ.get('WORDPRESS_APPLICATION_PASSWORD')
+WORDPRESS_JWT_TOKEN = os.environ.get('WORDPRESS_JWT_TOKEN')
+
 
 CKEDITOR_UPLOAD_PATH = 'uploads/'
 CKEDITOR_CONFIGS = {
