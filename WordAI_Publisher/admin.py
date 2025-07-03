@@ -157,9 +157,37 @@ class KeywordAdmin(admin.ModelAdmin):
             path('generate-content/<int:pk>/', self.admin_site.admin_view(self.generate_content_view), name='generate_content'),
             path('ajax-regenerate-versions/', self.admin_site.admin_view(self.ajax_regenerate_versions), name='ajax_regenerate_versions'),
             path('ajax-generate-versions/', self.admin_site.admin_view(self.ajax_generate_versions), name='ajax_generate_versions'),
+            path('ajax-regenerate-single-style/', self.admin_site.admin_view(self.ajax_regenerate_single_style), name='ajax_regenerate_single_style'),  # ✅ ADD THIS
         ]
         return custom_urls + urls
     
+    def ajax_regenerate_single_style(self, request):
+        if request.method == 'POST':
+            data = json.loads(request.body.decode())
+            post_id = data.get('post_id')
+            style_name = data.get('style_name')
+            
+            post = get_object_or_404(Post, pk=post_id)
+            post.style_images_status = 'in_process'
+            post.save()
+
+            # start generation just for this style name
+            threading.Thread(
+                target=generate_post_images_task,
+                args=(post.id,),
+                kwargs={'only_style': True, 'specific_style': style_name}
+            ).start()
+
+            # threading.Thread(
+            #     target=generate_post_images_task,
+            #     args=(post.id,),
+            #     kwargs={'only_style': True}
+            # ).start()
+
+
+            return JsonResponse({'success': True, 'message': f'Style "{style_name}" regeneration started.'})
+        return JsonResponse({'success': False, 'message': 'Invalid request.'})
+        
     def generate_content_view(self, request, pk):
         keyword = get_object_or_404(Keyword, pk=pk)
         prompt_obj = Prompt.objects.filter(prompt_id=keyword.prompt_id).first()
@@ -1485,6 +1513,7 @@ class PostAdmin(admin.ModelAdmin):
         else:
             return format_html('<span style="color:red;">&#10008;</span>')
     style_images_status_icon.short_description = "Style Images Status"
+
 
     def regenerate_featured_image(self, request, queryset):
         from WordAI_Publisher.tasks import generate_post_images_task

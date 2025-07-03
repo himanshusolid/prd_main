@@ -79,53 +79,38 @@ window.addEventListener('DOMContentLoaded', function() {
         }
     }
 });
-
-function regenerateFeaturedImage(loaderEl) {
-    var img = document.getElementById('featured-image-preview');
-    var originalSrc = img.src;
-    img.src = '/static/WordAI_Publisher/img/placeholder.png';
-
-    // ... your AJAX logic ...
-    fetch(window.ajaxRegenerateFeaturedImageUrl, { /* ... */ })
-        .then(response => response.json())
-        .then(data => {
-            // On success, reload the real image (cache-busted)
-            img.src = originalSrc + '?t=' + new Date().getTime();
-            loaderEl.innerHTML = "✅ Done!";
-        })
-        .catch(error => {
-            img.src = originalSrc;
-            loaderEl.innerHTML = "⚠️ Failed!";
-        });
-}
 </script>
 
 <div data-featured-image-section>
   {% if original.featured_image %}
-    <div style="margin: 18px 0 10px 0;">
-      <label><strong>Featured Image Preview:</strong></label><br>
-      <img id="featured-image-preview" src="{{ original.featured_image.url }}" alt="Featured Image"
+  <div style="margin: 18px 0 10px 0;">
+    <label><strong>Featured Image Preview:</strong></label><br>
+    {% if original.featured_image_status == 'in_process' %}
+      <img src="/static/WordAI_Publisher/img/placeholder.png" alt="Generating..."
            style="max-width: 300px; max-height: 200px; border: 1px solid #ccc; border-radius: 8px; margin-top: 6px;" />
-    </div>
+    {% else %}
+      <img src="{{ original.featured_image.url }}" alt="Featured Image"
+           style="max-width: 300px; max-height: 200px; border: 1px solid #ccc; border-radius: 8px; margin-top: 6px;" />
+    {% endif %}
+  </div>
 
-    <!-- Regenerate featured image button -->
-    <div style="margin-top: 10px;">
-      <button type="button" id="regen-featured-btn" style="
-           display: inline-block;
-    margin-left: 8px;
-    padding: 12px 27px;
-    background: #f5f5f5;
-    border: 1px solid #79aec8;
-    border-radius: 4px;
-    color: #333;
-    font-size: 13px;
-    cursor: pointer;
-    vertical-align: middle;
-    transition: background 0.2s, border 0.2s;">
-        🔄 Regenerate Featured Image
-      </button>
-    </div>
-  {% endif %}
+  <div style="margin-top: 10px;">
+    <button type="button" id="regen-featured-btn" style="
+         display: inline-block;
+         margin-left: 8px;
+         padding: 12px 27px;
+         background: #f5f5f5;
+         border: 1px solid #79aec8;
+         border-radius: 4px;
+         color: #333;
+         font-size: 13px;
+         cursor: pointer;
+         vertical-align: middle;
+         transition: background 0.2s, border 0.2s;">
+      🔄 Regenerate Featured Image
+    </button>
+  </div>
+{% endif %}
 </div>
 <div data-style-images-section>
   {% if original.style_images %}
@@ -136,9 +121,16 @@ function regenerateFeaturedImage(loaderEl) {
           {% if url %}
             <div style="text-align: center;">
               <a href="{{ url }}" target="_blank">
-                <img src="{{ url }}" alt="{{ style }}" style="max-width: 120px; max-height: 120px; border: 1px solid #ccc; border-radius: 8px; margin-bottom: 6px;" />
+                <img src="{{ url }}" alt="{{ style }}"
+                     style="max-width: 120px; max-height: 120px; border: 1px solid #ccc; border-radius: 8px; margin-bottom: 6px;" />
               </a>
               <div style="font-size: 13px; margin-top: 2px;">{{ style }}</div>
+              <button type="button"
+                      class="regen-style-single-btn"
+                      data-style-name="{{ style }}"
+                      style="margin-top: 6px; padding: 6px 12px; font-size: 12px; border: 1px solid #79aec8; background: #f5f5f5; border-radius: 4px; cursor: pointer;">
+                🔄 Regenerate Image
+              </button>
             </div>
           {% endif %}
         {% endfor %}

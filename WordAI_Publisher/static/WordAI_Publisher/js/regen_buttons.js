@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', function() {
         {selector: '[name="generated_style_section"]', buttonId: 'regen-style-btn', type: 'style_section'},
         {selector: '[name="generated_conclusion"]', buttonId: 'regen-conclusion-btn', type: 'conclusion'},
         {selector: '[name="meta_description"]', buttonId: 'regen-meta-description-btn', type: 'meta_description'},
-        {selector: '[name="meta_description"]', buttonId: 'regen-meta-title-btn', type: 'meta_title'}
+        {selector: '[name="meta_title"]', buttonId: 'regen-meta-title-btn', type: 'meta_title'}
       
     ];
 
@@ -114,6 +114,12 @@ document.addEventListener('DOMContentLoaded', function() {
     
         loaderOverlay.style.display = "flex";
     
+        // Immediately swap to placeholder image
+        const img = document.querySelector('[data-featured-image-section] img');
+        if (img) {
+            img.src = '/static/WordAI_Publisher/img/placeholder.png';
+        }
+    
         fetch(`/admin/WordAI_Publisher/keyword/ajax-regenerate-versions/`, {
             method: 'POST',
             headers: {
@@ -127,35 +133,72 @@ document.addEventListener('DOMContentLoaded', function() {
         })
         .then(response => response.json())
         .then(data => {
-            loaderOverlay.style.display = "none";
+            setTimeout(() => {
+                loaderOverlay.style.display = "none";
+                alert("✅ Images are generating in background.\nPlease refresh the page after a few seconds.");
+            }, 2000);
     
-            if (data.success) {
-                // Delay and then force reload image to show new version
-                setTimeout(() => {
-                    const img = document.querySelector('[data-featured-image-section] img');
-                    if (img) {
-                        const currentSrc = img.src.split('?')[0];
-                        img.src = currentSrc + '?t=' + new Date().getTime();
-                    }
-                }, 5000); // or adjust delay as needed
-            } else {
-                alert("⚠️ Error regenerating featured image.");
+            if (!data.success) {
+                alert("⚠️ Error starting featured image regeneration.");
             }
         })
         .catch(error => {
             console.error('Error:', error);
             loaderOverlay.style.display = "none";
-            alert("⚠️ Failed to regenerate featured image.");
+            alert("⚠️ Failed to start featured image regeneration.");
         });
     }
-
-
-
-
-
-
-
-
-
-
 });
+document.addEventListener('DOMContentLoaded', function() {
+    const styleButtons = document.querySelectorAll('.regen-style-single-btn');
+    styleButtons.forEach(btn => {
+        btn.addEventListener('click', function() {
+            const styleName = btn.getAttribute('data-style-name');
+            regenerateSingleStyleImage(styleName, btn);
+        });
+    });
+});
+
+function regenerateSingleStyleImage(styleName, button) {
+    const loaderOverlay = document.getElementById('fullPageLoader');
+
+    const match = window.location.pathname.match(/\/post\/(\d+)\/change\//);
+    const postId = match ? match[1] : null;
+    const csrfToken = getCookie('csrftoken');
+
+    loaderOverlay.style.display = "flex";
+
+    // Replace only the image next to this button
+    const img = button.closest('div').querySelector('img');
+    if (img) {
+        img.src = '/static/WordAI_Publisher/img/placeholder.png';
+    }
+
+    fetch(`/admin/WordAI_Publisher/keyword/ajax-regenerate-single-style/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+        },
+        body: JSON.stringify({
+            post_id: postId,
+            style_name: styleName
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        setTimeout(() => {
+            loaderOverlay.style.display = "none";
+            alert(`✅ Image "${styleName}" is generating in background.\nPlease refresh the page after a few seconds.`);
+        }, 10000);
+
+        if (!data.success) {
+            alert("⚠️ Error starting regeneration for " + styleName);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        loaderOverlay.style.display = "none";
+        alert("⚠️ Failed to regenerate " + styleName);
+    });
+}
