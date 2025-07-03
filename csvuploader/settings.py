@@ -95,9 +95,9 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': 'content_automation',
-        'USER': 'root',
-        'PASSWORD': '',
-        'HOST': '127.0.0.1',
+        'USER': 'prd_user',
+        'PASSWORD': 'mY2=bK7=eT4+mJ8+jK7-',
+        'HOST': 'contentautomation-lr1o6-mysql.contentautomation-lr1o6.svc.cluster.local',
         'PORT': '3306',
     }
 }
