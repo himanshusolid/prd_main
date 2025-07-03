@@ -71,7 +71,16 @@ class Post(models.Model):
     generated_conclusion = models.TextField(blank=True, null=True)
     meta_title = models.TextField(blank=True, null=True)
     meta_description = models.TextField(blank=True, null=True)
-    status = models.CharField(max_length=20, default='draft')  # e.g., draft, pushed
+    STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('pushed', 'Pushed'),
+        # Add more statuses if needed
+    ]
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='draft'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     featured_image = models.ImageField(upload_to='featured_images/', blank=True, null=True)

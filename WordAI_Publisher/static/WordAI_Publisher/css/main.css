@@ -1,0 +1,10 @@
+.form-row.field-style_images {
+    display: none !important;
+}
+.form-row.field-featured_image {
+    display: none !important;
+}
+.aligned label {
+    font-weight: bold;
+    color: var(--body-fg);
+}

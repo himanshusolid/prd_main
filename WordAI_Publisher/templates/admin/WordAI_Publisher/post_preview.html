@@ -1,3 +1,6 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
 <style>
     .preview-article {
         max-width: 700px;
@@ -59,36 +62,44 @@
         color: #222;
         font-style: italic;
     }
-    </style>
+    .placeholder-img {
+        max-width: 693px;
+    }
+</style>
     
-    <div class="preview-article">
-        <div class="preview-title">{{ post.generated_title|safe }}</div>
-        
-        {% if post.featured_image %}
-            <img src="{{ post.featured_image.url }}" class="preview-featured-image" />
-        {% endif %}
+<div class="preview-article">
+    <div class="preview-title">{{ post.generated_title|safe }}</div>
     
-        <div class="preview-intro">
-            {{ post.generated_intro|safe }}
-        </div>
-    
-        {% for section in style_sections %}
-            <div class="preview-style-section">
-                <div class="preview-style-heading">{{ section.heading|safe }}</div>
-                
-                {% if section.image_url %}
-                    <img src="{{ section.image_url }}" class="preview-style-image" />
-                {% else %}
-                    <p style="color: red; font-size: 12px;">
-                        ⚠ No image found for: "{{ section.heading|striptags }}"
-                    </p>
-                {% endif %}
-    
-                <div class="preview-style-content">{{ section.content|safe }}</div>
-            </div>
-        {% endfor %}
-    
-        <div class="preview-conclusion">
-            {{ post.generated_conclusion|safe }}
-        </div>
+    {% if post.featured_image_status == 'in_process' %}
+        <img src="{% static 'WordAI_Publisher/img/placeholder.png' %}" alt="Image in process" class="placeholder-img" />
+    {% elif post.featured_image %}
+        <img src="{{ post.featured_image.url }}" alt="Featured image" class="placeholder-img" />
+    {% else %}
+        <span>No image available</span>
+    {% endif %}
+
+    <div class="preview-intro">
+        {{ post.generated_intro|safe }}
     </div>
+
+    {% for section in style_sections %}
+        <div class="preview-style-section">
+            <div class="preview-style-heading">{{ section.heading|safe }}</div>
+            
+            {% if section.image_url %}
+                <img src="{{ section.image_url }}" class="preview-style-image" />
+            {% else %}
+                <p style="color: red; font-size: 12px;">
+                    ⚠ No image found for: "{{ section.heading|striptags }}"
+                </p>
+            {% endif %}
+
+            <div class="preview-style-content">{{ section.content|safe }}</div>
+        </div>
+    {% endfor %}
+
+    <div class="preview-conclusion">
+        {{ post.generated_conclusion|safe }}
+    </div>
+</div>
+</html>

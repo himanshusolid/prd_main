@@ -9,7 +9,7 @@
 #header a {
     color: #fff;
 }
-
+label { font-weight: bold; }
 /* Removed redundant #site-name a rules as logo is handled by <img> in base_site.html */
 
 .wordpress-status-message {
@@ -165,6 +165,7 @@
     box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.25); /* Subtle focus ring */
     outline: none;
 }
+
 
 /* Buttons */
 .button {

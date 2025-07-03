@@ -9,8 +9,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def generate_post_images_task(post_id, only_featured=False, only_style=False):
-    logger.info(f"Started image generation for post {post_id} (only_featured={only_featured}, only_style={only_style})")
+def generate_post_images_task(post_id, only_featured=False, only_style=False, specific_style=None):
+    logger.info(f"Started image generation for post {post_id} (only_featured={only_featured}, only_style={only_style}, specific_style={specific_style})")
     try:
         post = Post.objects.get(pk=post_id)
         prompt = post.prompt
@@ -29,6 +29,8 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False):
                     image_prompt = image_prompt.replace('{{skin_tone}}', model_info.skin_tone or '')
                     image_prompt = image_prompt.replace('{{hair_texture}}', model_info.hair_texture or '')
                     image_prompt = image_prompt.replace('{{face_shape}}', model_info.face_shape or '')
+
+                logger.info(f"Image prompt for post {post_id}: {image_prompt}")
 
                 featured_img_response = client.responses.create(
                     model="gpt-4.1-mini",
@@ -52,9 +54,11 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False):
                     with open(full_path, "rb") as f:
                         post.featured_image.save(image_name, f, save=True)
                     post.featured_image_status = 'completed'
+                    logger.info(f"OpenAI response for post {post_id}: {featured_img_response}")
                 else:
                     post.featured_image_status = 'not_generated'
             except Exception as e:
+                logger.error(f"Featured image generation failed for post {post_id}: {e}")
                 post.featured_image_status = 'not_generated'
             post.save(update_fields=['featured_image', 'featured_image_status'])
 
@@ -64,7 +68,11 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False):
             post.save(update_fields=['style_images_status'])
 
             style_names = extract_styles_by_h2(post.generated_style_section or "")
-            style_images = {}
+            style_images = post.style_images or {}
+
+            # If regenerating a single style, filter down
+            if specific_style:
+                style_names = [specific_style]
 
             for style_name in style_names:
                 try:
@@ -99,6 +107,7 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False):
                     else:
                         style_images[style_name] = None
                 except Exception as e:
+                    logger.error(f"Style image generation failed for {style_name} in post {post_id}: {e}")
                     style_images[style_name] = None
 
             post.style_images = style_images
@@ -106,8 +115,7 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False):
             post.save(update_fields=['style_images', 'style_images_status'])
 
     except Exception as e:
-        # Optionally log the error
-        print(f"Error in generate_post_images_task for post {post_id}: {e}")
+        logger.error(f"Error in generate_post_images_task for post {post_id}: {e}")
     logger.info(f"Finished image generation for post {post_id}")
 
 def extract_styles_by_h2(style_section_html):

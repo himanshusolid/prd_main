@@ -26,8 +26,9 @@ from django.db.models import JSONField  # ✅ Works with MySQL (Django 3.1+)
 from WordAI_Publisher.tasks import generate_post_images_task
 import threading
 from .models import Keyword, Prompt, ModelInfo, Post
-from .admin_forms import CSVUploadForm
+from .admin_forms import CSVUploadForm, PostAdminForm
 from django.utils.safestring import mark_safe
+from django.views.decorators.csrf import csrf_exempt
 
 # JWT token for WordPress authentication
 # WORDPRESS_JWT_TOKEN should be set in your settings.py file.
@@ -154,10 +155,373 @@ class KeywordAdmin(admin.ModelAdmin):
         custom_urls = [
             path('upload-csv/', self.admin_site.admin_view(self.upload_csv)),
             path('generate-content/<int:pk>/', self.admin_site.admin_view(self.generate_content_view), name='generate_content'),
+            path('ajax-regenerate-versions/', self.admin_site.admin_view(self.ajax_regenerate_versions), name='ajax_regenerate_versions'),
             path('ajax-generate-versions/', self.admin_site.admin_view(self.ajax_generate_versions), name='ajax_generate_versions'),
         ]
         return custom_urls + urls
+    
+    def generate_content_view(self, request, pk):
+        keyword = get_object_or_404(Keyword, pk=pk)
+        prompt_obj = Prompt.objects.filter(prompt_id=keyword.prompt_id).first()
+        model_info = ModelInfo.objects.filter(model_id=keyword.model_id).first()
 
+        # Define prompt templates for each section (these will now be fallback if prompt_obj fields are empty)
+        title_prompt_template = prompt_obj.title_prompt if prompt_obj and prompt_obj.title_prompt else ""
+        intro_prompt_template = prompt_obj.intro_prompt if prompt_obj and prompt_obj.intro_prompt else ""
+        style_section_prompt_template = prompt_obj.style_prompt if prompt_obj and prompt_obj.style_prompt else ""
+        conclusion_prompt_template = prompt_obj.conclusion_prompt if prompt_obj and prompt_obj.conclusion_prompt else ""
+        meta_data_prompt_template = prompt_obj.meta_data_prompt if prompt_obj and prompt_obj.meta_data_prompt else ""
+
+        # Replace keyword placeholder in prompts (using the new prompt variables)
+        title_prompt = title_prompt_template
+        if title_prompt and keyword.keyword:
+            title_prompt = title_prompt.replace('{{keyword}}', keyword.keyword)
+            title_prompt = title_prompt.replace('{{hairstyle_name}}', keyword.keyword)
+        
+        intro_prompt = intro_prompt_template
+        if intro_prompt and keyword.keyword:
+            intro_prompt = intro_prompt.replace('{{keyword}}', keyword.keyword)
+            intro_prompt = intro_prompt.replace('{{hairstyle_name}}', keyword.keyword)
+
+        style_section_prompt = style_section_prompt_template
+        if style_section_prompt and keyword.keyword:
+            style_section_prompt = style_section_prompt.replace('{{keyword}}', keyword.keyword)
+            style_section_prompt = style_section_prompt.replace('{{hairstyle_name}}', keyword.keyword)
+
+        conclusion_prompt = conclusion_prompt_template
+        if conclusion_prompt and keyword.keyword:
+            conclusion_prompt = conclusion_prompt.replace('{{keyword}}', keyword.keyword)
+            conclusion_prompt = conclusion_prompt.replace('{{hairstyle_name}}', keyword.keyword)
+
+        meta_data_prompt = meta_data_prompt_template
+        if meta_data_prompt and keyword.keyword:
+            meta_data_prompt = meta_data_prompt.replace('{{keyword}}', keyword.keyword)
+            meta_data_prompt = meta_data_prompt.replace('{{hairstyle_name}}', keyword.keyword)
+
+        image_prompt = prompt_obj.image_prompt if prompt_obj else 'N/A'
+        if image_prompt and keyword.keyword:
+            image_prompt = image_prompt.replace('{{hairstyle_name}}', keyword.keyword)
+        
+        # Replace placeholders in image_prompt with model_info attributes
+        if image_prompt and model_info:
+            image_prompt = image_prompt.replace('{{ethnicity}}', model_info.ethnicity if model_info.ethnicity else '')
+            image_prompt = image_prompt.replace('{{skin_tone}}', model_info.skin_tone if model_info.skin_tone else '')
+            image_prompt = image_prompt.replace('{{hair_texture}}', model_info.hair_texture if model_info.hair_texture else '')
+            image_prompt = image_prompt.replace('{{face_shape}}', model_info.face_shape if model_info.face_shape else '')
+
+        wordpress_post_status = None
+
+        if request.method == "POST":
+            action = request.POST.get("action")
+            content_type = request.POST.get("content_type") # Get the content type from the request
+
+            if action == "generate_text":
+                client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+                
+                # Determine which prompt to use based on content_type
+                if content_type == 'title':
+                    full_prompt = title_prompt
+                    field_to_update = 'generated_title'
+                    system_prompt = "You are a helpful assistant that generates SEO-optimized article titles. Format the title as a single H1 heading using markdown (e.g., '# Title Here')."
+                elif content_type == 'intro':
+                    full_prompt = intro_prompt
+                    field_to_update = 'generated_intro'
+                    system_prompt = "You are a helpful assistant that generates engaging article introductions. Start with an H2 heading using markdown (e.g., '## Introduction')."
+                elif content_type == 'style_section':
+                    full_prompt = style_section_prompt
+                    field_to_update = 'generated_style_section'
+                    system_prompt = "You are a helpful assistant that generates detailed style descriptions. Use H2 headings for each style section using markdown (e.g., '## Style Name')."
+                elif content_type == 'conclusion':
+                    full_prompt = conclusion_prompt
+                    field_to_update = 'generated_conclusion'
+                    system_prompt = "You are a helpful assistant that generates article conclusions. Start with an H2 heading using markdown (e.g., '## Conclusion')."
+                elif content_type == 'meta_seo':
+                    full_prompt = meta_data_prompt
+                    system_prompt = "You are an SEO assistant that generates concise meta titles and descriptions in JSON format."
+                else:
+                    return JsonResponse({
+                        'success': False,
+                        'message': 'Invalid content type provided.'
+                    })
+
+                try:
+                    if content_type == 'meta_seo':
+                        # Special handling for meta_seo as it returns JSON
+                        response = client.chat.completions.create(
+                            model="gpt-3.5-turbo",
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": full_prompt}
+                            ]
+                        )
+                        raw_meta_output = response.choices[0].message.content
+                        print(f"Raw Meta Data API Response: {raw_meta_output}")
+                        try:
+                            meta_data = json.loads(raw_meta_output)
+                            meta_title = meta_data.get('meta_title', '').replace('\\"', '"').strip('"')
+                            print(f"DEBUG (after get and strip): meta_title = {meta_title}")
+                            meta_description = meta_data.get('meta_description', '').replace('\\"', '"').strip('"')
+                            print(f"DEBUG (after get and strip): meta_description = {meta_description}")
+
+                            if keyword.keyword:
+                                meta_title = meta_title.replace('{{hairstyle_name}}', keyword.keyword)
+                                meta_description = meta_description.replace('{{hairstyle_name}}', keyword.keyword)
+                                print(f"DEBUG (after replacement): meta_title = {meta_title}")
+                                print(f"DEBUG (after replacement): meta_description = {meta_description}")
+
+                        except json.JSONDecodeError:
+                            # Fallback if AI doesn't return perfect JSON
+                            meta_title = "" # Could parse from raw_meta_output if a pattern is consistent
+                            meta_description = raw_meta_output # Store raw output if parsing fails
+                            print("JSON Decode Error for Meta Data. Storing raw output.")
+
+                        keyword.meta_title = meta_title
+                        keyword.meta_description = meta_description
+                        keyword.save()
+
+                        print(f"Sending to frontend - Meta Title: {meta_title}, Meta Description: {meta_description}")
+                        return JsonResponse({
+                            'success': True,
+                            'message': 'Meta Title and Description generated successfully!',
+                            'meta_title': meta_title,
+                            'meta_description': meta_description,
+                        })
+                    else:
+                        response = client.chat.completions.create(
+                            model="gpt-3.5-turbo",
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": full_prompt}
+                            ]
+                        )
+                        raw_generated_content = response.choices[0].message.content
+                        print(f"Raw generated content from API for {content_type}: {raw_generated_content}")
+                        # Strip quotes from generated content
+                        generated_content = raw_generated_content.replace('\\"', '"').strip('"')
+                        print(f"Processed generated content for {content_type} after strip: {generated_content}")
+                        # Convert markdown to HTML before saving and sending to frontend
+                        html_content = markdown.markdown(generated_content)
+                        setattr(keyword, field_to_update, html_content) # Update the specific field
+                        keyword.save()
+                        return JsonResponse({
+                            "success": True,
+                            "message": f"{content_type.replace('_', ' ').title()} generated successfully!",
+                            "content": html_content # Send back HTML content
+                        })
+                except openai.OpenAIError as e:
+                    return JsonResponse({
+                        'success': False,
+                        'message': f'ChatGPT API Error: {e}'
+                    })
+                except requests.exceptions.RequestException as e:
+                    return JsonResponse({
+                        'success': False,
+                        'message': f'Network/WordPress API Error: {e}'
+                    })
+
+            elif action == "generate_image":
+                client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+                try:
+                    response = client.images.generate(
+                        model="dall-e-2",
+                        prompt=image_prompt,
+                        size="256x256", # Changed to smaller size as per user request
+                        n=1,
+                    )
+                    image_url = response.data[0].url
+                    keyword.generated_image_url = image_url
+                    keyword.save()
+                    return JsonResponse({
+                        'success': True,
+                        'message': 'Image generated successfully!',
+                        'image_url': image_url
+                    })
+                except openai.OpenAIError as e:
+                    return JsonResponse({
+                        'success': False,
+                        'message': f'DALL-E API Error: {e}'
+                    })
+
+            elif action == "push_to_wordpress":
+                # Get content from all individual CKEditor instances
+                title_content = request.POST.get('title_content', '')
+                intro_content = request.POST.get('intro_content', '')
+                style_section_content = request.POST.get('style_section_content', '')
+                conclusion_content = request.POST.get('conclusion_content', '')
+
+                # Strip HTML tags from the title content
+                title_content_plain = re.sub(r'<[^>]*>', '', title_content).strip()
+
+                print(f"DEBUG: title_content: {title_content}")
+                print(f"DEBUG: intro_content: {intro_content}")
+                print(f"DEBUG: style_section_content: {style_section_content}")
+                print(f"DEBUG: conclusion_content: {conclusion_content}")
+
+                # Combine all content into a single post content, excluding meta for now
+                combined_content = f"{intro_content}\n\n{style_section_content}\n\n{conclusion_content}"
+
+                # WordPress API setup
+                wordpress_api_url = settings.WORDPRESS_API_URL
+                
+                # JWT token for WordPress authentication
+                # Ensure WORDPRESS_JWT_TOKEN is set in your settings.py
+                headers = {
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {settings.WORDPRESS_JWT_TOKEN}"
+                }
+                
+                # Data for the WordPress post
+                post_data = {
+                    "title": title_content_plain, # Use the plain text title here
+                    "content": combined_content, # All generated content in the main editor
+                    "status": "publish",
+                }
+                
+                print(f"DEBUG: post_data dictionary: {post_data}")
+                print(f"DEBUG: JSON payload sent: {json.dumps(post_data)}")
+                print("Attempting to post to WordPress with data:", post_data)
+                print("Headers:", headers)
+
+                try:
+                    # Extract base URL from WORDPRESS_API_URL for user check
+                    base_wordpress_url = settings.WORDPRESS_API_URL.split('/wp-json/')[0]
+                    user_check_url = f"{base_wordpress_url}/wp-json/wp/v2/users/me"
+                    user_response = requests.get(user_check_url, headers=headers)
+                    if user_response.status_code == 200:
+                        print("WordPress user verified successfully:", user_response.json().get('name'))
+                    else:
+                        print(f"WordPress user verification failed. Status: {user_response.status_code}, Response: {user_response.text}")
+                        return JsonResponse({
+                            'success': False,
+                            'message': f'WordPress user verification failed. Status: {user_response.status_code}, Error: {user_response.json().get("message", user_response.text)}'
+                        })
+
+                    response = requests.post(wordpress_api_url, headers=headers, json=post_data)
+                    print("WordPress API Response Status:", response.status_code)
+                    print("WordPress API Response Body:", response.text)
+
+                    if response.status_code == 201: # 201 Created for successful post
+                        return JsonResponse({
+                            'success': True,
+                            'message': 'Content pushed to WordPress as draft successfully!'
+                        })
+                    else:
+                        error_message = response.json().get('message', response.text) if response.json() else response.text
+                        return JsonResponse({
+                            'success': False,
+                            'message': f'Failed to push content to WordPress. Status: {response.status_code}, Error: {error_message}'
+                        })
+                except requests.exceptions.RequestException as e:
+                    return JsonResponse({
+                        'success': False,
+                        'message': f'Network/WordPress API Error: {e}'
+                    })
+
+            elif action == "generate_meta_seo": # This action is now deprecated, handled by generate_text
+                # The logic for meta_seo generation is now integrated into "generate_text" action.
+                return JsonResponse({
+                    'success': False,
+                    'message': "This action is deprecated. Use generate_text with content_type='meta_seo' instead."
+                })
+
+            elif action == "generate_all_content":
+                client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+                # Generate all content sections using their respective prompts
+                all_generated_data = {}
+                content_types = ['title', 'intro', 'style_section', 'conclusion', 'meta_seo']
+                prompts_map = {
+                    'title': title_prompt,
+                    'intro': intro_prompt,
+                    'style_section': style_section_prompt,
+                    'conclusion': conclusion_prompt,
+                    'meta_seo': meta_data_prompt,
+                }
+                system_prompts_map = {
+                    'title': "You are a helpful assistant that generates SEO-optimized article titles. Format the title as a single H1 heading using markdown (e.g., '# Title Here').",
+                    'intro': "You are a helpful assistant that generates engaging article introductions. Start with an H2 heading using markdown (e.g., '## Introduction').",
+                    'style_section': "You are a helpful assistant that generates detailed style descriptions. Use H2 headings for each style section using markdown (e.g., '## Style Name').",
+                    'conclusion': "You are a helpful assistant that generates article conclusions. Start with an H2 heading using markdown (e.g., '## Conclusion').",
+                    'meta_seo': "You are an SEO assistant that generates concise meta titles and descriptions in JSON format.",
+                }
+
+                for c_type in content_types:
+                    current_prompt = prompts_map[c_type]
+                    current_system_prompt = system_prompts_map[c_type]
+                    try:
+                        response = client.chat.completions.create(
+                            model="gpt-3.5-turbo",
+                            messages=[
+                                {"role": "system", "content": current_system_prompt},
+                                {"role": "user", "content": current_prompt}
+                            ]
+                        )
+                        generated_content = response.choices[0].message.content
+                        
+                        if c_type == 'meta_seo':
+                            try:
+                                meta_data = json.loads(generated_content)
+                                meta_title = meta_data.get('meta_title', '').replace('\\"', '"').strip('"')
+                                meta_description = meta_data.get('meta_description', '').replace('\\"', '"').strip('"')
+                                keyword.meta_title = meta_title
+                                keyword.meta_description = meta_description
+                                all_generated_data['meta_title'] = meta_title
+                                all_generated_data['meta_description'] = meta_description
+                            except json.JSONDecodeError:
+                                print(f"JSON Decode Error for Meta Data in generate_all_content. Raw output: {generated_content}")
+                                # Store raw output if parsing fails
+                                all_generated_data['meta_title'] = "Error generating meta title"
+                                all_generated_data['meta_description'] = generated_content
+                        else:
+                            # Strip quotes from generated content
+                            generated_content = generated_content.replace('\\"', '"').strip('"')
+                            html_content = markdown.markdown(generated_content)
+                            setattr(keyword, f'generated_{c_type}', html_content)
+                            all_generated_data[c_type] = html_content
+
+                    except openai.OpenAIError as e:
+                        print(f"Error generating {c_type} content: {e}")
+                        all_generated_data[c_type] = f"Error: {e}"
+
+                keyword.save()
+                return JsonResponse({
+                    "success": True,
+                    "message": "All content sections generated successfully!",
+                    "meta_title": all_generated_data.get('meta_title', ''),
+                    "meta_description": all_generated_data.get('meta_description', ''),
+                    "title": all_generated_data.get('title', ''),
+                    "intro": all_generated_data.get('intro', ''),
+                    "style_section": all_generated_data.get('style_section', ''),
+                    "conclusion": all_generated_data.get('conclusion', ''),
+                })
+
+        print(f"Meta Data Prompt being passed to template: {meta_data_prompt}")
+        form = KeywordAdminForm(instance=keyword)
+        
+        context = self.admin_site.each_context(request)
+        context.update({
+            'opts': self.model._meta,
+            'app_label': self.model._meta.app_label,
+            'original': keyword, # Pass the keyword object as 'original'
+            'title': f'Generate Content for: {keyword.keyword}',
+            'image_prompt': prompt_obj.image_prompt if prompt_obj else 'N/A',
+            'generated_image_url': keyword.generated_image_url,
+            'wordpress_post_status': wordpress_post_status,
+            'meta_title': keyword.meta_title,
+            'meta_description': keyword.meta_description,
+            # Pass individual content fields to the template
+            'generated_title': keyword.generated_title,
+            'generated_intro': keyword.generated_intro,
+            'generated_style_section': keyword.generated_style_section,
+            'generated_conclusion': keyword.generated_conclusion,
+            # Pass individual prompt templates to the template
+            'title_prompt': title_prompt,
+            'intro_prompt': intro_prompt,
+            'style_section_prompt': style_section_prompt,
+            'conclusion_prompt': conclusion_prompt,
+            'form': form, # Pass the form instance
+        })
+        return TemplateResponse(request, "admin/WordAI_Publisher/generated_content.html", context)
+    
     def upload_csv(self, request):
         context = self.admin_site.each_context(request)
         if request.method == "POST":
@@ -187,7 +551,6 @@ class KeywordAdmin(admin.ModelAdmin):
         })
         return render(request, "admin/WordAI_Publisher/upload_csv.html", context)
 
-    def generate_content_view(self, request, pk):
         keyword = get_object_or_404(Keyword, pk=pk)
         prompt_obj = Prompt.objects.filter(prompt_id=keyword.prompt_id).first()
         model_info = ModelInfo.objects.filter(model_id=keyword.model_id).first()
@@ -520,7 +883,7 @@ class KeywordAdmin(admin.ModelAdmin):
         )
     generate_content_button.short_description = "Actions"
     generate_content_button.allow_tags = True
-
+    
     def ajax_generate_versions(self, request):
         if request.method == 'POST':
             keyword_id = request.POST.get('keyword_id')
@@ -607,6 +970,134 @@ class KeywordAdmin(admin.ModelAdmin):
                 'post_id': post.id,
             })
         return JsonResponse({'success': False, 'message': 'Invalid request.'})
+    
+    def ajax_regenerate_versions(self, request):
+        if request.method == 'POST':
+            data = json.loads(request.body.decode())
+            post_id = data.get('post_id')
+            content_type = data.get('content_type')
+
+            post = get_object_or_404(Post, pk=post_id)
+            keyword = post.keyword
+            prompt = post.prompt
+            model_info = post.model_info
+            version_count = post.version
+            client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+
+            def fill_prompt(tmpl):
+                if tmpl:
+                    return tmpl.replace('{{keyword}}', keyword.keyword).replace('{{hairstyle_name}}', keyword.keyword)
+                return ''
+
+            def gpt_content(system_prompt, user_prompt):
+                if not user_prompt:
+                    return ''
+                response = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ]
+                )
+                return response.choices[0].message.content
+
+            if content_type == 'title':
+                content = gpt_content("", fill_prompt(prompt.title_prompt))
+                post.generated_title = content.strip('"').strip("'")
+                post.save()
+                return JsonResponse({
+                    'success': True,
+                    'message': 'Title regenerated.',
+                    'content': post.generated_title
+                })
+
+            elif content_type == 'intro':
+                content = gpt_content("you are a helpful assistant that generates engaging article introductions. Do not use markdown.", fill_prompt(prompt.intro_prompt))
+                post.generated_intro = content
+                post.save()
+                return JsonResponse({
+                    'success': True,
+                    'message': 'Intro regenerated.',
+                    'content': post.generated_intro
+                })
+
+            elif content_type == 'style_section':
+                content = gpt_content(
+                    f"You are a helpful assistant that generates detailed style descriptions. Use <h2> HTML headings for each style section, followed by paragraphs. Do not use markdown. Generate exactly {version_count} unique hairstyles.",
+                    fill_prompt(prompt.style_prompt)
+                )
+                post.generated_style_section = content
+                post.save()
+                return JsonResponse({
+                    'success': True,
+                    'message': 'Style section regenerated.',
+                    'content': post.generated_style_section
+                })
+
+            elif content_type == 'conclusion':
+                content = gpt_content("You are a helpful assistant that generates article conclusions. Do not use markdown.", fill_prompt(prompt.conclusion_prompt))
+                post.generated_conclusion = content
+                post.save()
+                return JsonResponse({
+                    'success': True,
+                    'message': 'Conclusion regenerated.',
+                    'content': post.generated_conclusion
+                })
+
+            elif content_type == 'meta_title':
+                meta_prompt = fill_prompt(prompt.meta_data_prompt)
+                meta_json = gpt_content("Return JSON with meta_title and meta_description.", meta_prompt)
+                try:
+                    meta_data = json.loads(meta_json)
+                    post.meta_title = meta_data.get('meta_title', '')
+                except Exception:
+                    post.meta_title = meta_json
+                post.save()
+                return JsonResponse({
+                    'success': True,
+                    'message': 'Meta title regenerated.',
+                    'meta_title': post.meta_title
+                })
+
+            elif content_type == 'meta_description':
+                meta_prompt = fill_prompt(prompt.meta_data_prompt)
+                meta_json = gpt_content("Return JSON with meta_title and meta_description.", meta_prompt)
+                try:
+                    meta_data = json.loads(meta_json)
+                    post.meta_description = meta_data.get('meta_description', '')
+                except Exception:
+                    post.meta_description = meta_json
+                post.save()
+                return JsonResponse({
+                    'success': True,
+                    'message': 'Meta description regenerated.',
+                    'meta_description': post.meta_description
+                })
+            elif content_type == 'featured_image':
+                post.featured_image_status = 'in_process'
+                post.save()
+                threading.Thread(target=generate_post_images_task, args=(post.id,), kwargs={'only_featured': True}).start()
+                return JsonResponse({
+                    'success': True,
+                    'message': 'Featured image regeneration started.',
+                    'status': post.featured_image_status
+                })
+
+            elif content_type == 'style_images':
+                post.style_images_status = 'in_process'
+                post.save()
+                threading.Thread(target=generate_post_images_task, args=(post.id,), kwargs={'only_style': True}).start()
+                return JsonResponse({
+                    'success': True,
+                    'message': 'Style images regeneration started.',
+                    'status': post.style_images_status
+                })
+
+            else:
+                return JsonResponse({'success': False, 'message': 'Invalid content type.'})
+
+        return JsonResponse({'success': False, 'message': 'Invalid request.'})
+
 
     def changelist_view(self, request, extra_context=None):
         if extra_context is None:
@@ -759,7 +1250,11 @@ class KeywordAdmin(admin.ModelAdmin):
 @admin.register(Post)
 class PostAdmin(admin.ModelAdmin):
     change_form_template = "admin/WordAI_Publisher/post_change_form.html"
-    form = __import__('WordAI_Publisher.admin_forms', fromlist=['PostAdminForm']).PostAdminForm
+    form = PostAdminForm
+    class Media:
+            css = {
+                'all': ('WordAI_Publisher/css/main.css',)
+            }
 
     list_display = (
         'id', 'keyword',
@@ -792,7 +1287,7 @@ class PostAdmin(admin.ModelAdmin):
             reverse('admin:push_post_to_wordpress', args=[obj.pk])
         )
     push_to_wordpress_button.short_description = "Push to WordPress"
-
+    
     def get_urls(self):
         urls = super().get_urls()
         custom_urls = [
@@ -805,7 +1300,7 @@ class PostAdmin(admin.ModelAdmin):
         post = get_object_or_404(Post, pk=post_id)
         style_sections = []
 
-        # Safely decode style_images
+        # Safely decode style_images JSON
         style_images = post.style_images
         if isinstance(style_images, str):
             try:
@@ -813,15 +1308,25 @@ class PostAdmin(admin.ModelAdmin):
             except json.JSONDecodeError:
                 style_images = {}
 
-        # Fix the spaces in keys: remove leading/trailing spaces
+        # Normalize keys by stripping whitespace
         style_images_clean = {k.strip(): v for k, v in style_images.items()}
 
-        if post.generated_style_section and style_images_clean:
+        # Only build style sections if we have a generated style section
+        if post.generated_style_section:
             headings = re.findall(r'(<h2>.*?</h2>)', post.generated_style_section, re.DOTALL)
             contents = re.split(r'<h2>.*?</h2>', post.generated_style_section)[1:]
+
             for i, heading in enumerate(headings):
                 style_name = re.sub(r'<.*?>', '', heading).strip()
-                image_url = style_images_clean.get(style_name, None)
+
+                # Default to placeholder
+                image_url = '/static/WordAI_Publisher/img/placeholder.png'
+
+                # If images are done generating, use actual image if available
+                if post.style_images_status != 'in_process':
+                    image_url = style_images_clean.get(style_name, image_url)
+
+                # Build section
                 section_content = contents[i] if i < len(contents) else ""
                 style_sections.append({
                     'heading': mark_safe(heading),
@@ -833,8 +1338,7 @@ class PostAdmin(admin.ModelAdmin):
             'post': post,
             'style_sections': style_sections,
         })
-
-    
+        
     def push_to_wordpress(self, request, post_id):
         post = get_object_or_404(Post, pk=post_id)
         self._push_post_to_wordpress(post, request)
@@ -984,28 +1488,42 @@ class PostAdmin(admin.ModelAdmin):
 
     def regenerate_featured_image(self, request, queryset):
         from WordAI_Publisher.tasks import generate_post_images_task
-        from django.contrib import messages
         count = 0
         for post in queryset:
             post.featured_image_status = 'in_process'
             post.save()
-            # Start only the featured image generation in background
-            generate_post_images_task(post.id, only_featured=True)
+            # Start featured image generation in a background thread
+            threading.Thread(
+                target=generate_post_images_task,
+                args=(post.id,),
+                kwargs={'only_featured': True}
+            ).start()
             count += 1
-        self.message_user(request, f"Regeneration started for featured images of {count} post(s).", level=messages.SUCCESS)
+        self.message_user(
+            request,
+            f"✅ Regeneration started for featured images of {count} post(s). It is running in the background.",
+            level=messages.SUCCESS
+        )
     regenerate_featured_image.short_description = "Regenerate Featured Image"
 
     def regenerate_style_images(self, request, queryset):
         from WordAI_Publisher.tasks import generate_post_images_task
-        from django.contrib import messages
         count = 0
         for post in queryset:
             post.style_images_status = 'in_process'
             post.save()
-            # Start only the style images generation in background
-            generate_post_images_task(post.id, only_style=True)
+            # Start style images generation in a background thread
+            threading.Thread(
+                target=generate_post_images_task,
+                args=(post.id,),
+                kwargs={'only_style': True}
+            ).start()
             count += 1
-        self.message_user(request, f"Regeneration started for style images of {count} post(s).", level=messages.SUCCESS)
+        self.message_user(
+            request,
+            f"✅ Regeneration started for style images of {count} post(s). It is running in the background.",
+            level=messages.SUCCESS
+        )
     regenerate_style_images.short_description = "Regenerate Style Images"
 
 def extract_styles_by_h2(style_section_html):
@@ -1013,3 +1531,4 @@ def extract_styles_by_h2(style_section_html):
         return []
     pattern = r'<h2>(.*?)</h2>'
     return re.findall(pattern, style_section_html)
+

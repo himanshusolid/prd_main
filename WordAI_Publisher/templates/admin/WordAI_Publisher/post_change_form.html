@@ -1,6 +1,11 @@
 {% extends "admin/change_form.html" %}
 {% load static %}
 
+{% block extrahead %}
+{{ block.super }}
+<script src="{% static 'WordAI_Publisher/js/regen_buttons.js' %}"></script>
+{% endblock %}
+
 {% block content %}
 {{ block.super }}
 <style>
@@ -18,9 +23,36 @@
     max-height: 85px !important;
     resize: none;
 }
+.regen-btn {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 12px 27px;
+    background: #f5f5f5;
+    border: 1px solid #79aec8;
+    border-radius: 4px;
+    color: #333;
+    font-size: 13px;
+    cursor: pointer;
+    vertical-align: middle;
+    transition: background 0.2s, border 0.2s;
+    float: inline-end;
+}
+#fullPageLoader {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255,255,255,0.8);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    font-weight: bold;
+    color: #333;
+    display: none; /* hidden by default */
+}
 </style>
-
-{# Move the Style Images preview section after the Generated style section field #}
 <script>
 window.addEventListener('DOMContentLoaded', function() {
     var styleImagesSection = document.querySelector('[data-style-images-section]');
@@ -47,35 +79,125 @@ window.addEventListener('DOMContentLoaded', function() {
         }
     }
 });
+
+function regenerateFeaturedImage(loaderEl) {
+    var img = document.getElementById('featured-image-preview');
+    var originalSrc = img.src;
+    img.src = '/static/WordAI_Publisher/img/placeholder.png';
+
+    // ... your AJAX logic ...
+    fetch(window.ajaxRegenerateFeaturedImageUrl, { /* ... */ })
+        .then(response => response.json())
+        .then(data => {
+            // On success, reload the real image (cache-busted)
+            img.src = originalSrc + '?t=' + new Date().getTime();
+            loaderEl.innerHTML = "✅ Done!";
+        })
+        .catch(error => {
+            img.src = originalSrc;
+            loaderEl.innerHTML = "⚠️ Failed!";
+        });
+}
 </script>
 
 <div data-featured-image-section>
-{% if original.featured_image %}
-  <div style="margin: 18px 0 10px 0;">
-    <label><strong>Featured Image Preview:</strong></label><br>
-    <img src="{{ original.featured_image.url }}" alt="Featured Image" style="max-width: 300px; max-height: 200px; border: 1px solid #ccc; border-radius: 8px; margin-top: 6px;" />
-  </div>
-{% endif %}
-</div>
-
-<div data-style-images-section>
-{% if original.style_images %}
-  <div style="margin-top: 30px;">
-    <label><strong>Style Images:</strong></label>
-    <div style="display: flex; flex-wrap: wrap; gap: 16px;">
-      {% for style, url in original.style_images.items %}
-        {% if url %}
-          <div style="text-align: center;">
-            <a href="{{ url }}" target="_blank">
-              <img src="{{ url }}" alt="{{ style }}" style="max-width: 120px; max-height: 120px; border: 1px solid #ccc; border-radius: 8px; margin-bottom: 6px;" />
-            </a>
-            <div style="font-size: 13px; margin-top: 2px;">{{ style }}</div>
-          </div>
-        {% endif %}
-      {% endfor %}
+  {% if original.featured_image %}
+    <div style="margin: 18px 0 10px 0;">
+      <label><strong>Featured Image Preview:</strong></label><br>
+      <img id="featured-image-preview" src="{{ original.featured_image.url }}" alt="Featured Image"
+           style="max-width: 300px; max-height: 200px; border: 1px solid #ccc; border-radius: 8px; margin-top: 6px;" />
     </div>
-  </div>
-{% endif %}
-</div>
 
+    <!-- Regenerate featured image button -->
+    <div style="margin-top: 10px;">
+      <button type="button" id="regen-featured-btn" style="
+           display: inline-block;
+    margin-left: 8px;
+    padding: 12px 27px;
+    background: #f5f5f5;
+    border: 1px solid #79aec8;
+    border-radius: 4px;
+    color: #333;
+    font-size: 13px;
+    cursor: pointer;
+    vertical-align: middle;
+    transition: background 0.2s, border 0.2s;">
+        🔄 Regenerate Featured Image
+      </button>
+    </div>
+  {% endif %}
+</div>
+<div data-style-images-section>
+  {% if original.style_images %}
+    <div style="margin-top: 30px;">
+      <label><strong>Style Images:</strong></label>
+      <div style="display: flex; flex-wrap: wrap; gap: 16px;">
+        {% for style, url in original.style_images.items %}
+          {% if url %}
+            <div style="text-align: center;">
+              <a href="{{ url }}" target="_blank">
+                <img src="{{ url }}" alt="{{ style }}" style="max-width: 120px; max-height: 120px; border: 1px solid #ccc; border-radius: 8px; margin-bottom: 6px;" />
+              </a>
+              <div style="font-size: 13px; margin-top: 2px;">{{ style }}</div>
+            </div>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+</div>
+  
+
+  
+
+{% endblock %}
+
+{% block after_field_sets %}
+    <script>
+        // This script will move the buttons next to the fields after the page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            // Move the buttons next to the fields
+            var titleRow = document.querySelector('[name="generated_title"]').closest('.form-row, .form-group');
+            var introRow = document.querySelector('[name="generated_intro"]').closest('.form-row, .form-group');
+            var conclusionRow = document.querySelector('[name="generated_conclusion"]').closest('.form-row, .form-group');
+            var descriptionRow = document.querySelector('[name="meta_description"]').closest('.form-row, .form-group');
+            var MetatitleRow = document.querySelector('[name="meta_title"]').closest('.form-row, .form-group');
+
+            if (featuredRow) {
+                var btn = document.getElementById('regen-featured-btn');
+                if (btn) featuredRow.appendChild(btn);
+            }
+            if (titleRow) {
+                var btn = document.getElementById('regen-title-btn');
+                if (btn) titleRow.appendChild(btn);
+            }
+            if (introRow) {
+                var btn = document.getElementById('regen-intro-btn');
+                if (btn) introRow.appendChild(btn);
+            }
+            if (conclusionRow) {
+                var btn = document.getElementById('regen-conclusion-btn');
+                if (btn) conclusionRow.appendChild(btn);
+            }
+            if (descriptionRow) {
+                var btn = document.getElementById('regen-meta-description-btn');
+                if (btn) descriptionRow.appendChild(btn);
+            }
+            if (MetatitleRow) {
+                var btn = document.getElementById('regen-meta-title-btn');
+                if (btn) MetatitleRow.appendChild(btn);
+            }
+        });
+    </script>
+    <button type="button" id="regen-title-btn" class="regen-btn">🔄 Regenerate</button>
+    <button type="button" id="regen-intro-btn" class="regen-btn">🔄 Regenerate</button>
+    <button type="button" id="regen-style-btn" class="regen-btn">🔄 Regenerate</button>
+    <button type="button" id="regen-conclusion-btn" class="regen-btn">🔄 Regenerate</button>
+    <button type="button" id="regen-meta-title-btn" class="regen-btn">🔄 Regenerate</button>
+    <button type="button" id="regen-meta-description-btn" class="regen-btn">🔄 Regenerate</button>
+  
+    <div id="fullPageLoader">
+      ⏳ Generating, please wait...
+    </div>
+    </style>
 {% endblock %}
