@@ -34,7 +34,7 @@ SECRET_KEY = 'django-insecure-if@cu3cz)hm1h3_qd3b)#eqat#k6vct(1fsat5(z=u#r2rmtaf
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['prdmain-ubnub.kinsta.app']
 
 
 # Application definition
