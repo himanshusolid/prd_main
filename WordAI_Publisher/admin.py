@@ -564,8 +564,7 @@ class KeywordAdmin(admin.ModelAdmin):
                 reader = csv.DictReader(decoded_file)
                 for row in reader:
                     Keyword.objects.create(
-                        keyword=row.get('keyword', ''),
-                        prompt_id=row.get('prompt_id', '')
+                        keyword=row.get('keyword', '')
                     )
                 self.message_user(request, "CSV uploaded successfully!", level=messages.SUCCESS)
                 return redirect("..")
