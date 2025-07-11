@@ -79,7 +79,7 @@ class ModelInfoAdmin(admin.ModelAdmin):
 
 @admin.register(Prompt)
 class PromptAdmin(admin.ModelAdmin):
-    list_display = ('prompt_id', 'title_prompt', 'intro_prompt', 'created_at')
+    list_display = ('prompt_id','title_prompt', 'intro_prompt','created_at')
     search_fields = ('prompt_id', 'title_prompt', 'image_prompt')
     list_filter = ('created_at',)
     fieldsets = (
@@ -87,7 +87,7 @@ class PromptAdmin(admin.ModelAdmin):
             'fields': ('prompt_id',)
         }),
         ('Prompts', {
-            'fields': ('title_prompt', 'intro_prompt', 'style_prompt', 'conclusion_prompt', 'meta_data_prompt', 'image_prompt'),
+            'fields': ('master_prompt','title_prompt', 'intro_prompt', 'style_prompt', 'conclusion_prompt', 'meta_data_prompt', 'image_prompt'),
             'classes': ('wide',)
         }),
         ('Timestamps', {
@@ -292,7 +292,7 @@ class KeywordAdmin(admin.ModelAdmin):
                             print(f"DEBUG (after get and strip): meta_description = {meta_description}")
 
                             if keyword.keyword:
-                                meta_title = meta_title.replace('{{hairstyle_name}}', keyword.keyword)
+                                meta_title = meta_title.replace('{{keyword}}', keyword.keyword)
                                 meta_description = meta_description.replace('{{hairstyle_name}}', keyword.keyword)
                                 print(f"DEBUG (after replacement): meta_title = {meta_title}")
                                 print(f"DEBUG (after replacement): meta_description = {meta_description}")
@@ -915,7 +915,9 @@ class KeywordAdmin(admin.ModelAdmin):
         if request.method == 'POST':
             keyword_id = request.POST.get('keyword_id')
             prompt_id = request.POST.get('prompt_id')
+            prompt_type = request.POST.get('prompt_type')
             version_count = int(request.POST.get('version_count', 1))
+
             keyword = get_object_or_404(Keyword, pk=keyword_id)
             prompt = get_object_or_404(Prompt, prompt_id=prompt_id)
             models = list(ModelInfo.objects.all())
@@ -924,18 +926,15 @@ class KeywordAdmin(admin.ModelAdmin):
             client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
             model_info = random.choice(models)
 
-            # Prepare prompts (replace placeholders)
+            # ✅ Move helpers here so BOTH if / else can use them
             def fill_prompt(tmpl):
                 if tmpl:
-                    return tmpl.replace('{{keyword}}', keyword.keyword).replace('{{hairstyle_name}}', keyword.keyword)
+                    return (tmpl
+                            .replace('{{keyword}}', keyword.keyword)
+                            .replace('{{hairstyle_name}}', keyword.keyword)
+                            .replace('{{version_count}}', str(version_count)))
                 return ''
-            title_prompt = fill_prompt(prompt.title_prompt)
-            intro_prompt = fill_prompt(prompt.intro_prompt)
-            style_prompt = fill_prompt(prompt.style_prompt)
-            conclusion_prompt = fill_prompt(prompt.conclusion_prompt)
-            meta_data_prompt = fill_prompt(prompt.meta_data_prompt)
 
-            # Generate content for each section (synchronously)
             def gpt_content(system_prompt, user_prompt):
                 if not user_prompt:
                     return ''
@@ -948,55 +947,126 @@ class KeywordAdmin(admin.ModelAdmin):
                 )
                 return response.choices[0].message.content
 
-            generated_title = gpt_content("", title_prompt)
-            if generated_title:
-                generated_title = generated_title.strip().strip('"').strip("'")
-            generated_intro = gpt_content("You are a helpful assistant that generates engaging article introductions. Do not use markdown.", intro_prompt)
-            generated_style_section = gpt_content(
-                f"You are a helpful assistant that generates detailed style descriptions. Use <h2> HTML headings for each style section, followed by paragraphs. Do not use markdown. Generate exactly {version_count} unique hairstyles.",
-                style_prompt
-            )
-            generated_conclusion = gpt_content("You are a helpful assistant that generates article conclusions. Do not use markdown.", conclusion_prompt)
-            meta_title = ''
-            meta_description = ''
-            if meta_data_prompt:
-                meta_json = gpt_content("You are an SEO assistant that generates concise meta titles and descriptions in JSON format.", meta_data_prompt)
+            # === Existing logic
+            if prompt_type == 'individual':
+                title_prompt = fill_prompt(prompt.title_prompt)
+                intro_prompt = fill_prompt(prompt.intro_prompt)
+                style_prompt = fill_prompt(prompt.style_prompt)
+                conclusion_prompt = fill_prompt(prompt.conclusion_prompt)
+                meta_data_prompt = fill_prompt(prompt.meta_data_prompt)
+
+                generated_title = gpt_content("", title_prompt)
+                if generated_title:
+                    generated_title = generated_title.strip().strip('"').strip("'")
+                generated_intro = gpt_content("You are a helpful assistant that generates engaging article introductions. Do not use markdown.", intro_prompt)
+                generated_style_section = gpt_content(
+                    f"You are a helpful assistant that generates detailed style descriptions. Use <h2> HTML headings for each style section, followed by paragraphs. Do not use markdown. Generate exactly {version_count} unique hairstyles.",
+                    style_prompt
+                )
+                generated_conclusion = gpt_content("You are a helpful assistant that generates article conclusions. Do not use markdown.", conclusion_prompt)
+                meta_title = ''
+                meta_description = ''
+                if meta_data_prompt:
+                    meta_json = gpt_content("You are an SEO assistant that generates concise meta titles and descriptions in JSON format.", meta_data_prompt)
+                    try:
+                        meta_data = json.loads(meta_json)
+                        meta_title = meta_data.get('meta_title', '')
+                        meta_description = meta_data.get('meta_description', '')
+                    except Exception:
+                        meta_title = ''
+                        meta_description = meta_json
+
+                post = Post.objects.create(
+                    keyword=keyword,
+                    prompt=prompt,
+                    model_info=model_info,
+                    version=1,
+                    generated_title=generated_title,
+                    generated_intro=generated_intro,
+                    generated_style_section=generated_style_section,
+                    generated_conclusion=generated_conclusion,
+                    meta_title=meta_title,
+                    meta_description=meta_description,
+                    status='draft',
+                    content_generated='completed',
+                    featured_image_status='in_process',
+                    style_images_status='in_process',
+                )
+                post.save()
+
+                threading.Thread(target=generate_post_images_task, args=(post.id,)).start()
+
+                return JsonResponse({
+                    'success': True,
+                    'message': 'Content generated. Images are being generated in the background.',
+                    'post_id': post.id,
+                })
+
+            else:
+                # === Your master prompt logic ===
+                master_prompt_text = fill_prompt(prompt.master_prompt)
+                system_prompt = (
+                    "You are a professional SEO and content writer that returns structured JSON for a blog article. "
+                    "Return a JSON object with the keys: meta_title, meta_description, title, introduction, styles, final_thoughts. "
+                    "Use this structure exactly: "
+                    "- meta_title is plain text (no HTML tags). "
+                    "- meta_description is plain text (no HTML tags). "
+                    "- title is plain text (no HTML tags). "
+                    "- introduction is an array of HTML <p> strings. "
+                    "- styles is an array of HTML strings, where each string starts with an <h2> style name followed by a <p> description. "
+                    "- final_thoughts is an array of HTML <p> strings. "
+                    "Do not use any nested JSON objects like {\"p\": \"...\"} or {\"h2\": \"...\"}. "
+                    "Only use plain strings inside the arrays. "
+                    "Do not use markdown, bullet points, or any text outside this JSON structure."
+                )
+
+                generated_content_json = gpt_content("", master_prompt_text)
+
                 try:
-                    meta_data = json.loads(meta_json)
-                    meta_title = meta_data.get('meta_title', '')
-                    meta_description = meta_data.get('meta_description', '')
+                    structured_content = json.loads(generated_content_json)
                 except Exception:
-                    meta_title = ''
-                    meta_description = meta_json
+                    structured_content = {"error": "Invalid JSON returned by GPT"}
 
-            # Save as Post (without images for now)
-            post = Post.objects.create(
-                keyword=keyword,
-                prompt=prompt,
-                model_info=model_info,
-                version=1,
-                generated_title=generated_title,
-                generated_intro=generated_intro,
-                generated_style_section=generated_style_section,
-                generated_conclusion=generated_conclusion,
-                meta_title=meta_title,
-                meta_description=meta_description,
-                status='draft',
-                content_generated='completed',
-                featured_image_status='in_process',
-                style_images_status='in_process',
-            )
-            post.save()
+                if "error" not in structured_content:
+                    meta_title = structured_content.get("meta_title", "")
+                    meta_description = structured_content.get("meta_description", "")
+                    title = structured_content.get("title", "")
+                    introduction_html = "".join(structured_content.get("introduction", []))
+                    styles_html = "".join(structured_content.get("styles", []))
+                    final_thoughts_html = "".join(structured_content.get("final_thoughts", []))
 
-            # Start image generation in a background thread (no Celery)
-            threading.Thread(target=generate_post_images_task, args=(post.id,)).start()
+                    # Now save to your Post model
+                    post = Post.objects.create(
+                        keyword=keyword,
+                        prompt=prompt,
+                        model_info=model_info,
+                        version=1,
+                        generated_title=title,
+                        generated_intro=introduction_html,
+                        generated_style_section=styles_html,
+                        generated_conclusion=final_thoughts_html,
+                        meta_title=meta_title,
+                        meta_description=meta_description,
+                        status='draft',
+                        content_generated='completed',
+                        featured_image_status='in_process',
+                        style_images_status='in_process',
+                    )
+                    post.save()
 
-            return JsonResponse({
-                'success': True,
-                'message': 'Content generated. Images are being generated in the background.',
-                'post_id': post.id,
-            })
+                    # Optionally start image generation thread
+                    threading.Thread(target=generate_post_images_task, args=(post.id,)).start()
+                else:
+                    print("GPT returned invalid JSON:", structured_content)
+
+                return JsonResponse({
+                    'success': True,
+                    'message': 'Style section generated from master prompt. Images are being generated in the background.',
+                    # 'post_id': post.id,
+                })
+
         return JsonResponse({'success': False, 'message': 'Invalid request.'})
+
     
     def ajax_regenerate_versions(self, request):
         if request.method == 'POST':
@@ -1559,4 +1629,3 @@ def extract_styles_by_h2(style_section_html):
         return []
     pattern = r'<h2>(.*?)</h2>'
     return re.findall(pattern, style_section_html)
-
