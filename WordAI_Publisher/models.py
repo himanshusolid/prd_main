@@ -33,6 +33,7 @@ class ModelInfo(models.Model):
 
 class Prompt(models.Model):
     prompt_id = models.CharField(max_length=255, unique=True)
+    master_prompt = models.TextField(blank=True, null=True)  # New field
     title_prompt = models.TextField(blank=True, null=True)
     intro_prompt = models.TextField(blank=True, null=True)
     style_prompt = models.TextField(blank=True, null=True)
@@ -128,4 +129,3 @@ class KeywordAdmin(admin.ModelAdmin):
 def extract_styles_by_h2(style_section_html):
     pattern = r'<h2>(.*?)</h2>'
     return re.findall(pattern, style_section_html)
-
