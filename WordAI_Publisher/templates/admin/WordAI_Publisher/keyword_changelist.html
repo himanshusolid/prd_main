@@ -51,6 +51,11 @@
               <option value="{{ prompt.prompt_id }}">{{ prompt.prompt_id }}</option>
           {% endfor %}
       </select>
+      <label for="prompt_type">Select Prompt type:</label>
+      <select name="prompt_type" id="prompt_type">
+        <option value="individual">individual Prompt</option>
+        <option value="master">Master Prompt</option>
+      </select>
       <label for="modal-version-count">Number of style Revisions:</label>
       <input type="number" id="modal-version-count" name="version_count" min="1" value="10" required />
       <div class="modal-actions">
