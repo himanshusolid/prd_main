@@ -276,7 +276,7 @@ class KeywordAdmin(admin.ModelAdmin):
                     if content_type == 'meta_seo':
                         # Special handling for meta_seo as it returns JSON
                         response = client.chat.completions.create(
-                            model="gpt-3.5-turbo",
+                            model="gpt-4o",
                             messages=[
                                 {"role": "system", "content": system_prompt},
                                 {"role": "user", "content": full_prompt}
@@ -316,7 +316,7 @@ class KeywordAdmin(admin.ModelAdmin):
                         })
                     else:
                         response = client.chat.completions.create(
-                            model="gpt-3.5-turbo",
+                            model="gpt-4o",
                             messages=[
                                 {"role": "system", "content": system_prompt},
                                 {"role": "user", "content": full_prompt}
@@ -477,7 +477,7 @@ class KeywordAdmin(admin.ModelAdmin):
                     current_system_prompt = system_prompts_map[c_type]
                     try:
                         response = client.chat.completions.create(
-                            model="gpt-3.5-turbo",
+                            model="gpt-4o",
                             messages=[
                                 {"role": "system", "content": current_system_prompt},
                                 {"role": "user", "content": current_prompt}
@@ -702,7 +702,7 @@ class KeywordAdmin(admin.ModelAdmin):
                     if content_type == 'meta_seo':
                         # Special handling for meta_seo as it returns JSON
                         response = client.chat.completions.create(
-                            model="gpt-3.5-turbo",
+                            model="gpt-4o",
                             messages=[
                                 {"role": "system", "content": system_prompt},
                                 {"role": "user", "content": full_prompt}
@@ -742,7 +742,7 @@ class KeywordAdmin(admin.ModelAdmin):
                         })
                     else:
                         response = client.chat.completions.create(
-                            model="gpt-3.5-turbo",
+                            model="gpt-4o",
                             messages=[
                                 {"role": "system", "content": system_prompt},
                                 {"role": "user", "content": full_prompt}
@@ -828,7 +828,7 @@ class KeywordAdmin(admin.ModelAdmin):
                     current_system_prompt = system_prompts_map[c_type]
                     try:
                         response = client.chat.completions.create(
-                            model="gpt-3.5-turbo",
+                            model="gpt-4o",
                             messages=[
                                 {"role": "system", "content": current_system_prompt},
                                 {"role": "user", "content": current_prompt}
@@ -939,7 +939,7 @@ class KeywordAdmin(admin.ModelAdmin):
                 if not user_prompt:
                     return ''
                 response = client.chat.completions.create(
-                    model="gpt-3.5-turbo",
+                    model="gpt-4o",
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
@@ -1006,22 +1006,36 @@ class KeywordAdmin(admin.ModelAdmin):
                 # === Your master prompt logic ===
                 master_prompt_text = fill_prompt(prompt.master_prompt)
                 system_prompt = (
-                    "You are a professional SEO and content writer that returns structured JSON for a blog article. "
-                    "Return a JSON object with the keys: meta_title, meta_description, title, introduction, styles, final_thoughts. "
-                    "Use this structure exactly: "
-                    "- meta_title is plain text (no HTML tags). "
-                    "- meta_description is plain text (no HTML tags). "
-                    "- title is plain text (no HTML tags). "
-                    "- introduction is an array of HTML <p> strings. "
-                    "- styles is an array of HTML strings, where each string starts with an <h2> style name followed by a <p> description. "
-                    "- final_thoughts is an array of HTML <p> strings. "
-                    "Do not use any nested JSON objects like {\"p\": \"...\"} or {\"h2\": \"...\"}. "
-                    "Only use plain strings inside the arrays. "
-                    "Do not use markdown, bullet points, or any text outside this JSON structure."
-                )
-
-                generated_content_json = gpt_content("", master_prompt_text)
-
+                    "You are a professional SEO and content writer who returns STRICT JSON output for a blog article."
+                    " Always return exactly this JSON structure: "
+                    "{"
+                    "  \"meta_title\": \"string\","
+                    "  \"meta_description\": \"string\","
+                    "  \"title\": \"string\","
+                    "  \"introduction\": [\"string\", ...],"
+                    "  \"styles\": [\"string\", ...],"
+                    "  \"final_thoughts\": [\"string\", ...]"
+                    " }"
+                    " Important JSON rules:"
+                    "- Use only double quotes (\"\") for JSON strings."
+                    "- NEVER add markdown code fences (no ```json or ```)."
+                    "- Do not add any markdown, bullet points, or text outside the JSON object."
+                    "- Only output the raw JSON object. Nothing before or after it."
+                    "- Arrays must contain only flat strings. No nested key:value pairs inside arrays."
+                    "- Ensure the JSON parses with json.loads() or PHP json_decode()."
+                    "- Validate carefully before finishing."
+                    " Here is an example format you must match exactly:"
+                    "{"
+                    "  \"meta_title\": \"Example Title\","
+                    "  \"meta_description\": \"Example description.\","
+                    "  \"title\": \"Example Title\","
+                    "  \"introduction\": [\"<p>Intro paragraph.</p>\"],"
+                    "  \"styles\": [\"<h2>Style Name</h2><p>Description.</p>\"],"
+                    "  \"final_thoughts\": [\"<p>Closing thoughts.</p>\"]"
+                    "}"
+)
+                generated_content_json = gpt_content(system_prompt, master_prompt_text)
+                print(generated_content_json)
                 try:
                     structured_content = json.loads(generated_content_json)
                 except Exception:
@@ -1090,7 +1104,7 @@ class KeywordAdmin(admin.ModelAdmin):
                 if not user_prompt:
                     return ''
                 response = client.chat.completions.create(
-                    model="gpt-3.5-turbo",
+                    model="gpt-4o",
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
@@ -1285,7 +1299,7 @@ class KeywordAdmin(admin.ModelAdmin):
                 if not user_prompt:
                     return ''
                 response = client.chat.completions.create(
-                    model="gpt-3.5-turbo",
+                    model="gpt-4o",
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
