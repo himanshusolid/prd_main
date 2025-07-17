@@ -967,7 +967,7 @@ class KeywordAdmin(admin.ModelAdmin):
                 meta_title = ''
                 meta_description = ''
                 if meta_data_prompt:
-                    meta_json = gpt_content("You are an SEO assistant that generates concise meta titles and descriptions in JSON format.", meta_data_prompt)
+                    meta_json = gpt_content("Return JSON with meta_title and meta_description.", meta_data_prompt)
                     try:
                         meta_data = json.loads(meta_json)
                         meta_title = meta_data.get('meta_title', '')
