@@ -6,8 +6,9 @@ from bs4 import BeautifulSoup
 import logging
 from django.conf import settings
 import openai
-from .models import Post
-
+from .models import Post,ModelInfo
+from itertools import cycle
+import sys
 
 logger = logging.getLogger(__name__)
 
@@ -21,11 +22,17 @@ def extract_styles_by_h2(style_section_html):
     return styles
 
 def generate_post_images_task(post_id, only_featured=False, only_style=False, specific_style=None):
+
     logger.info(f"Started image generation for post {post_id} (only_featured={only_featured}, only_style={only_style}, specific_style={specific_style})")
     try:
         post = Post.objects.get(pk=post_id)
         prompt = post.prompt
-        model_info = post.model_info
+       # Get all model info records
+        model_infos = ModelInfo.objects.all()
+
+        # Use the first model info for the featured image
+        first_model_info = model_infos.first()
+
         client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
 
         # === FEATURED IMAGE ===
@@ -35,20 +42,22 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False, sp
             try:
                 image_prompt = prompt.image_prompt or ''
                 image_prompt = image_prompt.replace('{{keyword}}', post.keyword.keyword)
-                if model_info:
-                    image_prompt = image_prompt.replace('{{ethnicity}}', model_info.ethnicity or '')
-                    image_prompt = image_prompt.replace('{{skin_tone}}', model_info.skin_tone or '')
-                    image_prompt = image_prompt.replace('{{hair_texture}}', model_info.hair_texture or '')
-                    image_prompt = image_prompt.replace('{{face_shape}}', model_info.face_shape or '')
-
+                if first_model_info:
+                    image_prompt = image_prompt.replace('{{ethnicity}}', first_model_info.ethnicity or '')
+                    image_prompt = image_prompt.replace('{{skin_tone}}', first_model_info.skin_tone or '')
+                    image_prompt = image_prompt.replace('{{hair_texture}}', first_model_info.hair_texture or '')
+                    image_prompt = image_prompt.replace('{{face_shape}}', first_model_info.face_shape or '')
+                    image_prompt = image_prompt.replace('{{tshirt}}', first_model_info.tshirt or '')
+                    image_prompt = image_prompt.replace('{{eye_color}}', first_model_info.eye_color or '')
                 logger.info(f"GPT-4.1-mini prompt for featured image: {image_prompt}")
                 print(image_prompt)
+
                 featured_img_response = client.responses.create(
                     model="gpt-4.1-mini",
                     input=image_prompt,
                     tools=[{"type": "image_generation"}],
                 )
-                
+
                 logger.info(f"Full GPT response for featured image: {featured_img_response}")
                 image_data = [
                     output.result
@@ -93,17 +102,39 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False, sp
 
             style_images = post.style_images or {}
 
-            for style_name in style_names:
+        # === STYLE IMAGES ===
+        if only_style or not (only_featured or only_style):
+            post.style_images_status = 'in_process'
+            post.save(update_fields=['style_images_status'])
+
+            style_names = extract_styles_by_h2(post.generated_style_section or "")
+            if not style_names:
+                logger.warning(f"No styles found for post {post_id}. Using fallback style.")
+                style_names = ["Generic Hairstyle"]
+
+            if specific_style:
+                style_names = [specific_style]
+
+            style_images = post.style_images or {}
+
+            from itertools import cycle
+            model_info_cycle = cycle(ModelInfo.objects.all())
+
+            for idx, style_name in enumerate(style_names):
                 try:
+                    current_model_info = next(model_info_cycle)
+
                     style_img_prompt = prompt.image_prompt or ''
                     style_img_prompt = style_img_prompt.replace('{{keyword}}', style_name)
-                    if model_info:
-                        style_img_prompt = style_img_prompt.replace('{{ethnicity}}', model_info.ethnicity or '')
-                        style_img_prompt = style_img_prompt.replace('{{skin_tone}}', model_info.skin_tone or '')
-                        style_img_prompt = style_img_prompt.replace('{{hair_texture}}', model_info.hair_texture or '')
-                        style_img_prompt = style_img_prompt.replace('{{face_shape}}', model_info.face_shape or '')
+                    style_img_prompt = style_img_prompt.replace('{{ethnicity}}', current_model_info.ethnicity or '')
+                    style_img_prompt = style_img_prompt.replace('{{skin_tone}}', current_model_info.skin_tone or '')
+                    style_img_prompt = style_img_prompt.replace('{{hair_texture}}', current_model_info.hair_texture or '')
+                    style_img_prompt = style_img_prompt.replace('{{face_shape}}', current_model_info.face_shape or '')
+                    style_img_prompt = style_img_prompt.replace('{{tshirt}}', current_model_info.tshirt or '')
+                    style_img_prompt = style_img_prompt.replace('{{eye_color}}', current_model_info.eye_color or '')
 
-                    logger.info(f"GPT-4.1-mini prompt for style '{style_name}': {style_img_prompt}")
+                    logger.info(f"GPT-4.1-mini prompt for style '{style_name}' with model {current_model_info}: {style_img_prompt}")
+                    print(f"GPT-4.1-mini prompt for style '{style_name}' with model {current_model_info}")
 
                     style_img_response = client.responses.create(
                         model="gpt-4.1-mini",
@@ -126,7 +157,7 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False, sp
                         style_full_path = os.path.join(settings.MEDIA_ROOT, style_relative_path)
                         os.makedirs(os.path.dirname(style_full_path), exist_ok=True)
                         with open(style_full_path, "wb") as f:
-                            f.write(base64.b64decode(image_data[0]))
+                            f.write(base64.b64decode(image_base64))
 
                         style_images[style_name] = f"{settings.MEDIA_URL}{style_relative_path}"
                         logger.info(f"Saved image for '{style_name}' at {style_relative_path}")
