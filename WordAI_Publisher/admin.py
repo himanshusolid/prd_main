@@ -35,7 +35,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 @admin.register(ModelInfo)
 class ModelInfoAdmin(admin.ModelAdmin):
-    list_display = ('model_id', 'ethnicity', 'skin_tone', 'hair_texture', 'face_shape', 'created_at')
+    list_display = ('model_id', 'ethnicity', 'skin_tone', 'hair_texture', 'face_shape','tshirt','eye_color','created_at')
     change_list_template = "admin/WordAI_Publisher/modelinfo_changelist.html"
 
     def get_urls(self):
