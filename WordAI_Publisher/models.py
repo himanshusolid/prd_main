@@ -25,6 +25,8 @@ class ModelInfo(models.Model):
     skin_tone = models.CharField(max_length=255, blank=True, null=True)
     hair_texture = models.CharField(max_length=255, blank=True, null=True)
     face_shape = models.CharField(max_length=255, blank=True, null=True)
+    tshirt = models.CharField(max_length=255, blank=True, null=True)
+    eye_color = models.CharField(max_length=255, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
