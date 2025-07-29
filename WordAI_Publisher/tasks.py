@@ -133,9 +133,8 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False, sp
                     style_img_prompt = style_img_prompt.replace('{{tshirt}}', current_model_info.tshirt or '')
                     style_img_prompt = style_img_prompt.replace('{{eye_color}}', current_model_info.eye_color or '')
 
-                    logger.info(f"GPT-4.1-mini prompt for style '{style_name}' with model {current_model_info}: {style_img_prompt}")
-                    print(f"GPT-4.1-mini prompt for style '{style_name}' with model {current_model_info}")
-
+                    print(f"GPT-4.1-mini prompt for style '{style_name}' with model {current_model_info}: {style_img_prompt}")
+                 
                     style_img_response = client.responses.create(
                         model="gpt-4.1-mini",
                         input=style_img_prompt,
