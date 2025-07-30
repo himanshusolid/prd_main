@@ -73,6 +73,8 @@ class Post(models.Model):
     generated_conclusion = models.TextField(blank=True, null=True)
     meta_title = models.TextField(blank=True, null=True)
     meta_description = models.TextField(blank=True, null=True)
+    featured_prompt_text = models.TextField(null=True, blank=True)
+    style_prompts = models.JSONField(null=True, blank=True)  # style name → prompt
     STATUS_CHOICES = [
         ('draft', 'Draft'),
         ('pushed', 'Pushed'),
