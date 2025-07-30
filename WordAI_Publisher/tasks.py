@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 import logging
 from django.conf import settings
 import openai
-from .models import Post,ModelInfo
+from .models import Post, ModelInfo
 from itertools import cycle
 import sys
 
@@ -27,10 +27,8 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False, sp
     try:
         post = Post.objects.get(pk=post_id)
         prompt = post.prompt
-       # Get all model info records
-        model_infos = ModelInfo.objects.all()
 
-        # Use the first model info for the featured image
+        model_infos = ModelInfo.objects.all()
         first_model_info = model_infos.first()
 
         client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
@@ -49,8 +47,12 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False, sp
                     image_prompt = image_prompt.replace('{{face_shape}}', first_model_info.face_shape or '')
                     image_prompt = image_prompt.replace('{{tshirt}}', first_model_info.tshirt or '')
                     image_prompt = image_prompt.replace('{{eye_color}}', first_model_info.eye_color or '')
+
                 logger.info(f"GPT-4.1-mini prompt for featured image: {image_prompt}")
                 print(image_prompt)
+
+                # Save the featured image prompt to DB
+                post.featured_prompt_text = image_prompt
 
                 featured_img_response = client.responses.create(
                     model="gpt-4.1-mini",
@@ -73,7 +75,6 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False, sp
                     os.makedirs(os.path.dirname(full_path), exist_ok=True)
                     with open(full_path, "wb") as f:
                         f.write(base64.b64decode(image_base64))
-                    # Save to ImageField
                     with open(full_path, "rb") as f:
                         post.featured_image.save(image_name, f, save=True)
 
@@ -81,11 +82,13 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False, sp
                     logger.info(f"Featured image saved for post {post_id}")
                 else:
                     post.featured_image_status = 'not_generated'
-                    logger.warning(f"No image data returned by GPT for featured image.")
+                    logger.warning("No image data returned by GPT for featured image.")
+
             except Exception as e:
                 logger.error(f"Featured image generation failed for post {post_id}: {e}")
                 post.featured_image_status = 'not_generated'
-            post.save(update_fields=['featured_image', 'featured_image_status'])
+
+            post.save(update_fields=['featured_image', 'featured_image_status', 'featured_prompt_text'])
 
         # === STYLE IMAGES ===
         if only_style or not (only_featured or only_style):
@@ -101,24 +104,13 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False, sp
                 style_names = [specific_style]
 
             style_images = post.style_images or {}
+            style_prompt_dict = post.style_prompts or {}
 
-        # === STYLE IMAGES ===
-        if only_style or not (only_featured or only_style):
-            post.style_images_status = 'in_process'
-            post.save(update_fields=['style_images_status'])
-
-            style_names = extract_styles_by_h2(post.generated_style_section or "")
-            if not style_names:
-                logger.warning(f"No styles found for post {post_id}. Using fallback style.")
-                style_names = ["Generic Hairstyle"]
-
+            # Remove existing prompt entry if regenerating a specific style
             if specific_style:
-                style_names = [specific_style]
+                style_prompt_dict.pop(specific_style, None)
 
-            style_images = post.style_images or {}
-
-            from itertools import cycle
-            model_info_cycle = cycle(ModelInfo.objects.all())
+            model_info_cycle = cycle(model_infos)
 
             for idx, style_name in enumerate(style_names):
                 try:
@@ -134,7 +126,8 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False, sp
                     style_img_prompt = style_img_prompt.replace('{{eye_color}}', current_model_info.eye_color or '')
 
                     print(f"GPT-4.1-mini prompt for style '{style_name}' with model {current_model_info}: {style_img_prompt}")
-                 
+                    style_prompt_dict[style_name] = style_img_prompt
+
                     style_img_response = client.responses.create(
                         model="gpt-4.1-mini",
                         input=style_img_prompt,
@@ -169,8 +162,9 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False, sp
                     style_images[style_name] = None
 
             post.style_images = style_images
+            post.style_prompts = style_prompt_dict
             post.style_images_status = 'completed'
-            post.save(update_fields=['style_images', 'style_images_status'])
+            post.save(update_fields=['style_images', 'style_images_status', 'style_prompts'])
 
     except Exception as e:
         logger.error(f"Error in generate_post_images_task for post {post_id}: {e}")
