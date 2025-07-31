@@ -946,6 +946,12 @@ class KeywordAdmin(admin.ModelAdmin):
                     ]
                 )
                 return response.choices[0].message.content
+            
+            def extract_styles_from_html(html):
+                pattern = r"<h2>(.*?)<\/h2>(.*?)(?=<h2>|$)"
+                matches = re.findall(pattern, html, re.DOTALL)
+                return [{"style_name": title.strip(), "html": f"<h2>{title.strip()}</h2>{content.strip()}"} for title, content in matches]
+            
 
             # === Existing logic
             if prompt_type == 'individual':
@@ -963,6 +969,28 @@ class KeywordAdmin(admin.ModelAdmin):
                     f"You are a helpful assistant that generates detailed style descriptions. Use <h2> HTML headings for each style section, followed by paragraphs. Do not use markdown. Generate exactly {version_count} unique hairstyles.",
                     style_prompt
                 )
+
+                style_blocks = extract_styles_from_html(generated_style_section)
+                style_image_descriptions = []
+
+                for block in style_blocks:
+                    style_name = block["style_name"]
+
+                    # Generate image style description
+                    image_desc = gpt_content(
+                        "You are an editorial stylist creating image descriptions for a fashion AI. Write a visual description of the haircut below in 35–60 words. Include hair length, texture, shape, sides, top, and camera angle.",
+                        f"Hairstyle: {style_name}"
+                    )
+
+                    style_image_descriptions.append({
+                        "style_name": style_name,
+                        "image_style_description": image_desc.strip()
+                    })
+                style_dict = {
+                item["style_name"]: item["image_style_description"]
+                for item in style_image_descriptions
+                }    
+
                 generated_conclusion = gpt_content("You are a helpful assistant that generates article conclusions. Do not use markdown.", conclusion_prompt)
                 meta_title = ''
                 meta_description = ''
@@ -980,7 +1008,7 @@ class KeywordAdmin(admin.ModelAdmin):
                     keyword=keyword,
                     prompt=prompt,
                     model_info=model_info,
-                    version=1,
+                    version=version_count,
                     generated_title=generated_title,
                     generated_intro=generated_intro,
                     generated_style_section=generated_style_section,
@@ -991,6 +1019,7 @@ class KeywordAdmin(admin.ModelAdmin):
                     content_generated='completed',
                     featured_image_status='in_process',
                     style_images_status='in_process',
+                    style_image_descriptions = style_dict
                 )
                 post.save()
 
@@ -1054,7 +1083,7 @@ class KeywordAdmin(admin.ModelAdmin):
                         keyword=keyword,
                         prompt=prompt,
                         model_info=model_info,
-                        version=1,
+                        version=version_count,
                         generated_title=title,
                         generated_intro=introduction_html,
                         generated_style_section=styles_html,
@@ -1082,6 +1111,7 @@ class KeywordAdmin(admin.ModelAdmin):
         return JsonResponse({'success': False, 'message': 'Invalid request.'})
 
     
+    
     def ajax_regenerate_versions(self, request):
         if request.method == 'POST':
             data = json.loads(request.body.decode())
@@ -1095,11 +1125,20 @@ class KeywordAdmin(admin.ModelAdmin):
             version_count = post.version
             client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
 
+            # ✅ Move helpers here so BOTH if / else can use them
             def fill_prompt(tmpl):
                 if tmpl:
-                    return tmpl.replace('{{keyword}}', keyword.keyword).replace('{{hairstyle_name}}', keyword.keyword)
+                    return (tmpl
+                            .replace('{{keyword}}', keyword.keyword)
+                            .replace('{{hairstyle_name}}', keyword.keyword)
+                            .replace('{{version_count}}', str(version_count)))
                 return ''
-
+            
+            def extract_styles_from_html(html):
+                pattern = r"<h2>(.*?)<\/h2>(.*?)(?=<h2>|$)"
+                matches = re.findall(pattern, html, re.DOTALL)
+                return [{"style_name": title.strip(), "html": f"<h2>{title.strip()}</h2>{content.strip()}"} for title, content in matches]
+            
             def gpt_content(system_prompt, user_prompt):
                 if not user_prompt:
                     return ''
@@ -1133,12 +1172,39 @@ class KeywordAdmin(admin.ModelAdmin):
                 })
 
             elif content_type == 'style_section':
+
                 content = gpt_content(
                     f"You are a helpful assistant that generates detailed style descriptions. Use <h2> HTML headings for each style section, followed by paragraphs. Do not use markdown. Generate exactly {version_count} unique hairstyles.",
                     fill_prompt(prompt.style_prompt)
                 )
+
+                style_blocks = extract_styles_from_html(content)
+                style_image_descriptions = []
+
+                for block in style_blocks:
+                    style_name = block["style_name"]
+
+                    # Generate image style description
+                    image_desc = gpt_content(
+                        "You are an editorial stylist creating image descriptions for a fashion AI. Write a visual description of the haircut below in 35–60 words. Include hair length, texture, shape, sides, top, and camera angle.",
+                        f"Hairstyle: {style_name}"
+                    )
+
+                    style_image_descriptions.append({
+                        "style_name": style_name,
+                        "image_style_description": image_desc.strip()
+                    })
+                style_dict = {
+                item["style_name"]: item["image_style_description"]
+                for item in style_image_descriptions
+                }    
+                post.style_image_descriptions = style_dict  # Directly assign list
                 post.generated_style_section = content
+                post.style_images_status = 'in_process'
                 post.save()
+
+                threading.Thread(target=generate_post_images_task, args=(post.id,), kwargs={'only_style': True}).start()
+
                 return JsonResponse({
                     'success': True,
                     'message': 'Style section regenerated.',

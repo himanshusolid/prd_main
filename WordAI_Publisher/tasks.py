@@ -49,7 +49,7 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False, sp
                     image_prompt = image_prompt.replace('{{eye_color}}', first_model_info.eye_color or '')
 
                 logger.info(f"GPT-4.1-mini prompt for featured image: {image_prompt}")
-                print(image_prompt)
+                # print(image_prompt)
 
                 # Save the featured image prompt to DB
                 post.featured_prompt_text = image_prompt
@@ -90,15 +90,18 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False, sp
 
             post.save(update_fields=['featured_image', 'featured_image_status', 'featured_prompt_text'])
 
-        # === STYLE IMAGES ===
+                # === STYLE IMAGES ===
         if only_style or not (only_featured or only_style):
             post.style_images_status = 'in_process'
             post.save(update_fields=['style_images_status'])
 
-            style_names = extract_styles_by_h2(post.generated_style_section or "")
+            style_image_descriptions = post.style_image_descriptions or {}
+            style_names = list(style_image_descriptions.keys())
+
             if not style_names:
-                logger.warning(f"No styles found for post {post_id}. Using fallback style.")
+                logger.warning(f"No style image descriptions found for post {post_id}. Using fallback style.")
                 style_names = ["Generic Hairstyle"]
+                style_image_descriptions["Generic Hairstyle"] = "This is a placeholder description for a generic hairstyle."
 
             if specific_style:
                 style_names = [specific_style]
@@ -117,7 +120,8 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False, sp
                     current_model_info = next(model_info_cycle)
 
                     style_img_prompt = prompt.image_prompt or ''
-                    style_img_prompt = style_img_prompt.replace('{{keyword}}', style_name)
+                    style_img_prompt = style_img_prompt.replace('{{keyword}}', post.keyword.keyword)
+                    style_img_prompt = style_img_prompt.replace('{{style_image_description}}', style_image_descriptions.get(style_name,''))
                     style_img_prompt = style_img_prompt.replace('{{ethnicity}}', current_model_info.ethnicity or '')
                     style_img_prompt = style_img_prompt.replace('{{skin_tone}}', current_model_info.skin_tone or '')
                     style_img_prompt = style_img_prompt.replace('{{hair_texture}}', current_model_info.hair_texture or '')
@@ -125,9 +129,8 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False, sp
                     style_img_prompt = style_img_prompt.replace('{{tshirt}}', current_model_info.tshirt or '')
                     style_img_prompt = style_img_prompt.replace('{{eye_color}}', current_model_info.eye_color or '')
 
-                    print(f"GPT-4.1-mini prompt for style '{style_name}' with model {current_model_info}: {style_img_prompt}")
                     style_prompt_dict[style_name] = style_img_prompt
-
+                    print(style_img_prompt)
                     style_img_response = client.responses.create(
                         model="gpt-4.1-mini",
                         input=style_img_prompt,
@@ -166,6 +169,7 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False, sp
             post.style_images_status = 'completed'
             post.save(update_fields=['style_images', 'style_images_status', 'style_prompts'])
 
+            
     except Exception as e:
         logger.error(f"Error in generate_post_images_task for post {post_id}: {e}")
     logger.info(f"Finished image generation for post {post_id}")
