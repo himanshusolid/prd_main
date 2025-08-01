@@ -5,7 +5,7 @@ from django.contrib import messages
 import csv
 from django.utils.html import format_html
 from django.urls import reverse
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse, JsonResponse ,HttpResponseBadRequest
 from django.template.response import TemplateResponse
 import openai
 from django.conf import settings
@@ -29,6 +29,7 @@ from .models import Keyword, Prompt, ModelInfo, Post
 from .admin_forms import CSVUploadForm, PostAdminForm
 from django.utils.safestring import mark_safe
 from django.views.decorators.csrf import csrf_exempt
+
 
 # JWT token for WordPress authentication
 # WORDPRESS_JWT_TOKEN should be set in your settings.py file.
@@ -158,9 +159,43 @@ class KeywordAdmin(admin.ModelAdmin):
             path('ajax-regenerate-versions/', self.admin_site.admin_view(self.ajax_regenerate_versions), name='ajax_regenerate_versions'),
             path('ajax-generate-versions/', self.admin_site.admin_view(self.ajax_generate_versions), name='ajax_generate_versions'),
             path('ajax-regenerate-single-style/', self.admin_site.admin_view(self.ajax_regenerate_single_style), name='ajax_regenerate_single_style'),  # ✅ ADD THIS
+            path('save-style-prompt/', self.admin_site.admin_view(self.save_style_prompt), name='save_style_prompt'),  # ✅ ADD THIS
+
         ]
         return custom_urls + urls
     
+    def save_style_prompt(self, request):
+        if request.method != "POST":
+            return HttpResponseBadRequest("Only POST requests allowed.")
+
+        try:
+            data = json.loads(request.body)
+            style_name = data.get("style_name")
+            content = data.get("content")
+            object_id = data.get("object_id")
+
+            if not all([style_name, content, object_id]):
+                return HttpResponseBadRequest("Missing one or more required fields.")
+
+            obj = get_object_or_404(Post, pk=object_id)
+
+            if style_name == "featured_image":
+                # Save to featured_prompt_text (TextField)
+                obj.featured_prompt_text = content
+                obj.save(update_fields=["featured_prompt_text"])
+            else:
+                # Save to style_prompts JSONField
+                prompts = obj.style_prompts or {}
+                prompts[style_name] = content
+                obj.style_prompts = prompts
+                obj.save(update_fields=["style_prompts"])
+
+            return JsonResponse({"success": True})
+
+        except Exception as e:
+            return JsonResponse({"success": False, "error": str(e)}, status=500)
+
+
     def ajax_regenerate_single_style(self, request):
         if request.method == 'POST':
             data = json.loads(request.body.decode())
@@ -1253,7 +1288,7 @@ class KeywordAdmin(admin.ModelAdmin):
             elif content_type == 'featured_image':
                 post.featured_image_status = 'in_process'
                 post.save()
-                threading.Thread(target=generate_post_images_task, args=(post.id,), kwargs={'only_featured': True}).start()
+                threading.Thread(target=generate_post_images_task,args=(post.id,),kwargs={'only_featured': True, 'featured_prompt_text': post.featured_prompt_text}).start()
                 return JsonResponse({
                     'success': True,
                     'message': 'Featured image regeneration started.',
@@ -1263,7 +1298,7 @@ class KeywordAdmin(admin.ModelAdmin):
             elif content_type == 'style_images':
                 post.style_images_status = 'in_process'
                 post.save()
-                threading.Thread(target=generate_post_images_task, args=(post.id,), kwargs={'only_style': True}).start()
+                threading.Thread(target=generate_post_images_task,args=(post.id,),kwargs={'only_style': True, 'style_prompts': post.style_prompts}).start()
                 return JsonResponse({
                     'success': True,
                     'message': 'Style images regeneration started.',
