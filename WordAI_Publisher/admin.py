@@ -1224,7 +1224,7 @@ class KeywordAdmin(admin.ModelAdmin):
                         "You are an editorial stylist creating image descriptions for a fashion AI. Write a visual description of the haircut below in 35–60 words. Include hair length, texture, shape, sides, top, and camera angle.",
                         f"Hairstyle: {style_name}"
                     )
-
+        
                     style_image_descriptions.append({
                         "style_name": style_name,
                         "image_style_description": image_desc.strip()
@@ -1236,6 +1236,9 @@ class KeywordAdmin(admin.ModelAdmin):
                 post.style_image_descriptions = style_dict  # Directly assign list
                 post.generated_style_section = content
                 post.style_images_status = 'in_process'
+                # 🔥 Clear old style images and prompts
+                post.style_images = {}
+                post.style_prompts = {}
                 post.save()
 
                 threading.Thread(target=generate_post_images_task, args=(post.id,), kwargs={'only_style': True}).start()
@@ -1297,6 +1300,8 @@ class KeywordAdmin(admin.ModelAdmin):
 
             elif content_type == 'style_images':
                 post.style_images_status = 'in_process'
+                post.style_images = {}
+                post.style_prompts = {}
                 post.save()
                 threading.Thread(target=generate_post_images_task,args=(post.id,),kwargs={'only_style': True, 'style_prompts': post.style_prompts}).start()
                 return JsonResponse({

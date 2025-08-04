@@ -56,27 +56,30 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False, sp
                 # Save the featured image prompt to DB
                 post.featured_prompt_text = image_prompt
 
-                featured_img_response = client.responses.create(
-                    model="gpt-4.1-mini",
-                    input=image_prompt,
-                    tools=[{"type": "image_generation"}],
+                result = client.images.generate(
+                    model="gpt-image-1",
+                    prompt=image_prompt,
+                    size="1536x1024",               # You can make this dynamic if needed
+                    background="transparent",       # Use "white" if not supporting transparency
+                    quality="high"
                 )
 
-                logger.info(f"Full GPT response for featured image: {featured_img_response}")
-                image_data = [
-                    output.result
-                    for output in featured_img_response.output
-                    if getattr(output, "type", None) == "image_generation_call"
-                ]
+                # Log the full JSON response
+                logger.info(f"Full GPT response for featured image: {result.json()}")
 
-                if image_data:
-                    image_base64 = image_data[0]
+                # Extract base64 image data
+                image_base64 = result.data[0].b64_json
+
+
+                if image_base64:
                     image_name = f"{post.keyword.keyword.replace(' ', '_')}_featured_{random.randint(1000,9999)}.png"
                     relative_path = f"featured_images/{image_name}"
                     full_path = os.path.join(settings.MEDIA_ROOT, relative_path)
                     os.makedirs(os.path.dirname(full_path), exist_ok=True)
+
                     with open(full_path, "wb") as f:
                         f.write(base64.b64decode(image_base64))
+
                     with open(full_path, "rb") as f:
                         post.featured_image.save(image_name, f, save=True)
 
@@ -91,6 +94,7 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False, sp
                 post.featured_image_status = 'not_generated'
 
             post.save(update_fields=['featured_image', 'featured_image_status', 'featured_prompt_text'])
+
 
         # === STYLE IMAGES ===
         if only_style or not (only_featured or only_style):
@@ -111,12 +115,6 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False, sp
             style_images = post.style_images or {}
             style_prompt_dict = post.style_prompts or {}
 
-            # Remove existing prompt entry if regenerating CLEAa specific style
-            # if specific_style:
-            #     style_prompt_dict.pop(specific_style, None)
-            #     print(style_prompt_dict)
-            #     # print(style_prompt_dict)
-            #     sys.exit()  # stops the program
             model_info_cycle = cycle(model_infos)
 
             for idx, style_name in enumerate(style_names):
@@ -142,22 +140,22 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False, sp
                         style_prompt_dict[style_name] = style_img_prompt
 
                     print(f"[{post_id}] Prompt for style '{style_name}': {style_img_prompt}")
-            
-                    style_img_response = client.responses.create(
-                        model="gpt-4.1-mini",
-                        input=style_img_prompt,
-                        tools=[{"type": "image_generation"}],
+
+                    # === ✅ Updated to use GPT-Image-1 ===
+                    style_img_response = client.images.generate(
+                        model="gpt-image-1",
+                        prompt=style_img_prompt,
+                        size="1536x1024",
+                        background="transparent",  # or "white"
+                        quality="high"
                     )
-                    logger.info(f"[{post_id}] GPT response for style '{style_name}': {style_img_response}")
 
-                    image_data = [
-                        output.result
-                        for output in style_img_response.output
-                        if getattr(output, "type", None) == "image_generation_call"
-                    ]
+                    logger.info(f"[{post_id}] GPT-Image-1 response for style '{style_name}': {style_img_response}")
 
-                    if image_data:
-                        image_base64 = image_data[0]
+                    # === ✅ Extract base64 from response ===
+                    image_base64 = style_img_response.data[0].b64_json
+
+                    if image_base64:
                         safe_style_name = "".join(c if c.isalnum() else "_" for c in style_name)
                         style_img_name = f"{safe_style_name}_style_{post.id}_{random.randint(1000,9999)}.png"
                         style_relative_path = f"style_images/{style_img_name}"
