@@ -2,3 +2,5 @@
 media/featured_images/
 media/generated_images/
 media/style_images/
+.env
+venv
