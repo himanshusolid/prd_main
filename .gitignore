@@ -1,1 +1,4 @@
-/media/
+# Ignore specific folders inside media/
+media/featured_images/
+media/generated_images/
+media/style_images/
