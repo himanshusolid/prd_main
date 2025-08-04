@@ -30,8 +30,6 @@ from .admin_forms import CSVUploadForm, PostAdminForm
 from django.utils.safestring import mark_safe
 from django.views.decorators.csrf import csrf_exempt
 
-
-# JWT token for WordPress authentication
 # WORDPRESS_JWT_TOKEN should be set in your settings.py file.
 
 @admin.register(ModelInfo)
