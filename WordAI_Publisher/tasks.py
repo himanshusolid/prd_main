@@ -141,7 +141,7 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False, sp
 
                     print(f"[{post_id}] Prompt for style '{style_name}': {style_img_prompt}")
 
-                    # === ✅ Updated to use GPT-Image-1 ===
+
                     style_img_response = client.images.generate(
                         model="gpt-image-1",
                         prompt=style_img_prompt,
