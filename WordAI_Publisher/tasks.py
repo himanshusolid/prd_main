@@ -62,8 +62,7 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False, sp
                     model="gpt-image-1",
                     prompt=image_prompt,
                     size="1536x1024",
-                    background="transparent",
-                    quality="high"
+                    quality="medium"
                 )
 
                 logger.info(f"Full GPT response for featured image: {result.json()}")
@@ -132,8 +131,7 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False, sp
                         model="gpt-image-1",
                         prompt=style_img_prompt,
                         size="1536x1024",
-                        background="transparent",
-                        quality="high"
+                        quality="medium"
                     )
 
                     logger.info(f"[{post_id}] GPT-Image-1 response for style '{style_name}': {style_img_response}")
