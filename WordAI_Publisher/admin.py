@@ -1236,7 +1236,7 @@ class KeywordAdmin(admin.ModelAdmin):
                 post.style_images_status = 'in_process'
                 # 🔥 Clear old style images and prompts
                 post.style_images = {}
-                post.style_prompts = {}
+                post.style_prompts = None
                 post.save()
 
                 threading.Thread(target=generate_post_images_task, args=(post.id,), kwargs={'only_style': True}).start()
@@ -1299,7 +1299,7 @@ class KeywordAdmin(admin.ModelAdmin):
             elif content_type == 'style_images':
                 post.style_images_status = 'in_process'
                 post.style_images = {}
-                post.style_prompts = {}
+                post.style_prompts = None
                 post.save()
                 threading.Thread(target=generate_post_images_task,args=(post.id,),kwargs={'only_style': True, 'style_prompts': post.style_prompts}).start()
                 return JsonResponse({
