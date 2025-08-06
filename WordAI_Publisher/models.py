@@ -41,6 +41,7 @@ class Prompt(models.Model):
     style_prompt = models.TextField(blank=True, null=True)
     conclusion_prompt = models.TextField(blank=True, null=True)
     meta_data_prompt = models.TextField(blank=True, null=True)
+    featured_image_prompt = models.TextField(blank=True, null=True)
     image_prompt = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

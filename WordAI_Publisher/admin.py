@@ -86,7 +86,7 @@ class PromptAdmin(admin.ModelAdmin):
             'fields': ('prompt_id',)
         }),
         ('Prompts', {
-            'fields': ('master_prompt','title_prompt', 'intro_prompt', 'style_prompt', 'conclusion_prompt', 'meta_data_prompt', 'image_prompt'),
+            'fields': ('master_prompt','title_prompt', 'intro_prompt', 'style_prompt', 'conclusion_prompt','meta_data_prompt','featured_image_prompt','image_prompt'),
             'classes': ('wide',)
         }),
         ('Timestamps', {

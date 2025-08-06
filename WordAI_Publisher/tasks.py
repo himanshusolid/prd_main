@@ -27,7 +27,6 @@ def extract_styles_by_h2(style_section_html):
 
 def generate_post_images_task(post_id, only_featured=False, only_style=False, specific_style=None, featured_prompt_text=None, style_prompts_override=None):
     logger.info(f"Started image generation for post {post_id} (only_featured={only_featured}, only_style={only_style}, specific_style={specific_style})")
-    print(featured_prompt_text)
     try:
         post = Post.objects.get(pk=post_id)
         prompt = post.prompt
@@ -42,7 +41,8 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False, sp
             post.featured_image_status = 'in_process'
             post.save(update_fields=['featured_image_status'])
             try:
-                image_prompt = featured_prompt_text or prompt.image_prompt or ''
+                image_prompt = featured_prompt_text or prompt.featured_image_prompt or ''
+                print(image_prompt)
                 image_prompt = image_prompt.replace('{{keyword}}', post.keyword.keyword)
                 if first_model_info:
                     image_prompt = image_prompt.replace('{{ethnicity}}', first_model_info.ethnicity or '')
@@ -54,7 +54,7 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False, sp
                     image_prompt = image_prompt.replace('{{eye_color}}', first_model_info.eye_color or '')
 
                 logger.info(f"GPT-4.1-mini prompt for featured image: {image_prompt}")
-                print(image_prompt)
+        
 
                 post.featured_prompt_text = image_prompt
 
