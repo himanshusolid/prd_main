@@ -34,7 +34,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 @admin.register(ModelInfo)
 class ModelInfoAdmin(admin.ModelAdmin):
-    list_display = ('model_id', 'ethnicity', 'skin_tone', 'hair_texture', 'face_shape','tshirt','eye_color','created_at')
+    list_display = ('model_id', 'ethnicity', 'skin_tone', 'hair_texture', 'face_shape','tshirt','eye_color','hair_color','created_at')
     change_list_template = "admin/WordAI_Publisher/modelinfo_changelist.html"
 
     def get_urls(self):
@@ -62,7 +62,16 @@ class ModelInfoAdmin(admin.ModelAdmin):
                         ethnicity=row.get('ethnicity', ''),
                         skin_tone=row.get('skin_tone', ''),
                         hair_texture=row.get('hair_texture', ''),
-                        face_shape=row.get('face_shape', '')
+                        face_shape=row.get('face_shape', ''),
+                        tshirt=row.get('tshirt', ''),
+                        eye_color=row.get('eye_color', ''),
+                        hair_color=row.get('hair_color', ''),
+                        build_description=row.get('build_description', ''),
+                        expression_description=row.get('expression_description', ''),
+                        wardrobe_color=row.get('wardrobe_color', ''),
+                        wardrobe_item=row.get('wardrobe_item', ''),
+                        grooming_description=row.get('grooming_description', ''),
+                        brand=row.get('brand', ''),
                     )
                 self.message_user(request, "CSV uploaded successfully!", level=messages.SUCCESS)
                 return redirect("..")

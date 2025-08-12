@@ -27,6 +27,13 @@ class ModelInfo(models.Model):
     face_shape = models.CharField(max_length=255, blank=True, null=True)
     tshirt = models.CharField(max_length=255, blank=True, null=True)
     eye_color = models.CharField(max_length=255, blank=True, null=True)
+    hair_color = models.CharField(max_length=255, blank=True)
+    build_description = models.TextField(blank=True, null=True)
+    expression_description = models.TextField(blank=True, null=True)
+    wardrobe_color = models.TextField(blank=True, null=True)
+    wardrobe_item = models.TextField(blank=True, null=True)
+    grooming_description = models.TextField(blank=True, null=True)
+    brand = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

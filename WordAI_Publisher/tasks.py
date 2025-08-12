@@ -52,7 +52,16 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False, sp
                     image_prompt = image_prompt.replace('{{face_shape}}', first_model_info.face_shape or '')
                     image_prompt = image_prompt.replace('{{tshirt}}', first_model_info.tshirt or '')
                     image_prompt = image_prompt.replace('{{eye_color}}', first_model_info.eye_color or '')
-
+                   
+                    # New fields
+                    image_prompt = image_prompt.replace('{{hair_color}}', first_model_info.hair_color or '')
+                    image_prompt = image_prompt.replace('{{build_description}}', first_model_info.build_description or '')
+                    image_prompt = image_prompt.replace('{{expression_description}}', first_model_info.expression_description or '')
+                    image_prompt = image_prompt.replace('{{wardrobe_color}}', first_model_info.wardrobe_color or '')
+                    image_prompt = image_prompt.replace('{{wardrobe_item}}', first_model_info.wardrobe_item or '')
+                    image_prompt = image_prompt.replace('{{grooming_description}}', first_model_info.grooming_description or '')
+                    image_prompt = image_prompt.replace('{{brand}}', first_model_info.brand or '')
+  
                 logger.info(f"GPT-4.1-mini prompt for featured image: {image_prompt}")
         
 
@@ -123,9 +132,19 @@ def generate_post_images_task(post_id, only_featured=False, only_style=False, sp
                         style_img_prompt = style_img_prompt.replace('{{face_shape}}', current_model_info.face_shape or '')
                         style_img_prompt = style_img_prompt.replace('{{tshirt}}', current_model_info.tshirt or '')
                         style_img_prompt = style_img_prompt.replace('{{eye_color}}', current_model_info.eye_color or '')
+
+                        # New fields
+                        style_img_prompt = style_img_prompt.replace('{{hair_color}}', current_model_info.hair_color or '')
+                        style_img_prompt = style_img_prompt.replace('{{build_description}}', current_model_info.build_description or '')
+                        style_img_prompt = style_img_prompt.replace('{{expression_description}}', current_model_info.expression_description or '')
+                        style_img_prompt = style_img_prompt.replace('{{wardrobe_color}}', current_model_info.wardrobe_color or '')
+                        style_img_prompt = style_img_prompt.replace('{{wardrobe_item}}', current_model_info.wardrobe_item or '')
+                        style_img_prompt = style_img_prompt.replace('{{grooming_description}}', current_model_info.grooming_description or '')
+                        style_img_prompt = style_img_prompt.replace('{{brand}}', current_model_info.brand or '')
+
                         style_prompt_dict[style_name] = style_img_prompt
 
-                    print(f"[{post_id}] Prompt for style '{style_name}': {style_img_prompt}")
+                    # print(f"[{post_id}] Prompt for style '{style_name}': {style_img_prompt}")
 
                     style_img_response = client.images.generate(
                         model="gpt-image-1",
