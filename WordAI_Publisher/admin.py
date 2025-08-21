@@ -11,6 +11,7 @@ from django.db import models
 from django.db.models import JSONField  # ✅ Works with MySQL (Django 3.1+)
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
+from django.http import HttpResponseRedirect
 
 import base64
 import csv
@@ -1557,16 +1558,7 @@ class GenerationJobAdmin(admin.ModelAdmin):
     status_badge.short_description = "Status"
 
     def changelist_view(self, request, extra_context=None):
-        """
-        Default the list to 'status=queued' unless the user already filtered by something.
-        Also pass an autorefresh interval to the template (optional).
-        """
-        if 'status__exact' not in request.GET and 'q' not in request.GET:
-            q = request.GET.copy()
-            q['status__exact'] = 'queued'
-            request.GET = q
-            request.META['QUERY_STRING'] = q.urlencode()
-
-        extra_context = extra_context or {}
-        extra_context['auto_refresh_seconds'] = 10  # tweak as desired
+        # When no filter is applied, default to queued
+        if request.method == "GET" and "status__exact" not in request.GET and not request.GET:
+            return HttpResponseRedirect(f"{request.path}?status__exact=queued")
         return super().changelist_view(request, extra_context=extra_context)
