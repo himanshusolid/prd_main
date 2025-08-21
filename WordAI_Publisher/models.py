@@ -139,6 +139,46 @@ class KeywordAdmin(admin.ModelAdmin):
             path('ajax-generate-versions/', self.admin_site.admin_view(self.ajax_generate_versions), name='ajax_generate_versions'),
         ]
         return custom_urls + urls
+    
+# --- NEW: GenerationJob ---
+class GenerationJob(models.Model):
+    PROMPT_TYPES = (
+        ('individual', 'individual'),
+        ('master', 'master'),
+    )
+    STATUSES = (
+        ('queued', 'queued'),
+        ('running', 'running'),
+        ('done', 'done'),
+        ('failed', 'failed'),
+    )
+
+    keyword = models.ForeignKey('Keyword', on_delete=models.CASCADE, null=True, blank=True)
+    prompt = models.ForeignKey('Prompt', on_delete=models.SET_NULL, null=True, blank=True)
+    prompt_type = models.CharField(max_length=20, choices=PROMPT_TYPES, default='individual')
+    version_count = models.PositiveIntegerField(default=1)
+
+    # bookkeeping
+    status = models.CharField(max_length=16, choices=STATUSES, default='queued', db_index=True)
+    error = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    # optional: who requested and which post came out of it
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='+'
+    )
+    post = models.ForeignKey('Post', null=True, blank=True, on_delete=models.SET_NULL)
+
+    def __str__(self):
+        return f"Job#{self.pk} {self.keyword and self.keyword.keyword} [{self.prompt_type}] {self.status}"
+    
+    class Meta:
+        managed = False
+        db_table = 'wordai_publisher_generationjob'
+
+
 
 def extract_styles_by_h2(style_section_html):
     pattern = r'<h2>(.*?)</h2>'

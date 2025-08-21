@@ -10,6 +10,7 @@ from django.conf import settings
 from django.db import models
 from django.db.models import JSONField  # ✅ Works with MySQL (Django 3.1+)
 from django.views.decorators.csrf import csrf_exempt
+from django.utils import timezone
 
 import base64
 import csv
@@ -31,9 +32,203 @@ from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 
 from WordAI_Publisher.tasks import generate_post_images_task
-from .models import Keyword, Prompt, ModelInfo, Post
+from .models import Keyword, Prompt, ModelInfo, Post, GenerationJob
 from .admin_forms import CSVUploadForm, PostAdminForm
 
+# =============== Simple FIFO queue worker (single-thread) ===============
+_worker_guard = threading.Lock()
+_worker_thread = None
+
+def _ensure_worker_running():
+    """Start a single background worker to drain the queue."""
+    global _worker_thread
+    with _worker_guard:
+        if not _worker_thread or not _worker_thread.is_alive():
+            _worker_thread = threading.Thread(target=_queue_runner, daemon=True)
+            _worker_thread.start()
+
+def _queue_runner():
+    """Continuously pull the oldest queued job and process it until empty."""
+    while True:
+        job = GenerationJob.objects.filter(status='queued').order_by('created_at').first()
+        if not job:
+            break
+        _run_generation_job(job.id)
+
+def _run_generation_job(job_id: int):
+    """Do the same work you do today, but for a single queued job."""
+    client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+
+    def gpt_content(system_prompt, user_prompt):
+        if not user_prompt:
+            return ''
+        resp = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
+        )
+        return resp.choices[0].message.content
+
+    def extract_styles_from_html(html):
+        pattern = r"<h2>(.*?)<\/h2>(.*?)(?=<h2>|$)"
+        matches = re.findall(pattern or "", html or "", re.DOTALL)
+        return [{"style_name": title.strip(), "html": f"<h2>{title.strip()}</h2>{content.strip()}"} for title, content in matches]
+
+    job = GenerationJob.objects.select_related('keyword', 'prompt').get(pk=job_id)
+    if not job.keyword or not job.prompt:
+        job.status = 'failed'
+        job.error = 'Keyword or Prompt missing'
+        job.finished_at = timezone.now()
+        job.save(update_fields=['status', 'error', 'finished_at'])
+        return
+
+    try:
+        job.status = 'running'
+        job.started_at = timezone.now()
+        job.save(update_fields=['status', 'started_at'])
+
+        # choose a model_info like you do today
+        models_list = list(ModelInfo.objects.all())
+        if not models_list:
+            raise RuntimeError("No ModelInfo records available")
+        model_info = random.choice(models_list)
+
+        # --- Build prompts (same as your existing code) ---
+        def fill_prompt(tmpl):
+            if tmpl:
+                return (tmpl
+                        .replace('{{keyword}}', job.keyword.keyword or '')
+                        .replace('{{hairstyle_name}}', job.keyword.keyword or '')
+                        .replace('{{version_count}}', str(job.version_count)))
+            return ''
+
+        pr = job.prompt
+        if job.prompt_type == 'individual':
+            title_prompt = fill_prompt(pr.title_prompt)
+            intro_prompt = fill_prompt(pr.intro_prompt)
+            style_prompt = fill_prompt(pr.style_prompt)
+            conclusion_prompt = fill_prompt(pr.conclusion_prompt)
+            meta_data_prompt = fill_prompt(pr.meta_data_prompt)
+
+            generated_title = gpt_content("", title_prompt)
+            if generated_title:
+                generated_title = generated_title.strip().strip('"').strip("'")
+
+            generated_intro = gpt_content(
+                "You are a helpful assistant that generates engaging article introductions. Do not use markdown.",
+                intro_prompt
+            )
+            generated_style_section = gpt_content(
+                f"You are a helpful assistant that generates detailed style descriptions. "
+                f"Use <h2> HTML headings for each style section, followed by paragraphs. "
+                f"Do not use markdown. Generate exactly {job.version_count} unique hairstyles.",
+                style_prompt
+            )
+            style_blocks = extract_styles_from_html(generated_style_section)
+            style_image_descriptions = []
+            for block in style_blocks:
+                style_name = block["style_name"]
+                image_desc = gpt_content(
+                    "You are an editorial stylist creating image descriptions for a fashion AI. "
+                    "Write a visual description of the haircut below in 35–60 words. "
+                    "Include hair length, texture, shape, sides, top, and camera angle.",
+                    f"Hairstyle: {style_name}"
+                )
+                style_image_descriptions.append({
+                    "style_name": style_name,
+                    "image_style_description": image_desc.strip()
+                })
+            style_dict = {item["style_name"]: item["image_style_description"] for item in style_image_descriptions}
+
+            generated_conclusion = gpt_content(
+                "You are a helpful assistant that generates article conclusions. Do not use markdown.",
+                conclusion_prompt
+            )
+            meta_title = ''
+            meta_description = ''
+            if meta_data_prompt:
+                meta_json = gpt_content("Return JSON with meta_title and meta_description.", meta_data_prompt)
+                try:
+                    meta_data = json.loads(meta_json)
+                    meta_title = meta_data.get('meta_title', '')
+                    meta_description = meta_data.get('meta_description', '')
+                except Exception:
+                    meta_title = ''
+                    meta_description = meta_json
+
+            post = Post.objects.create(
+                keyword=job.keyword,
+                prompt=pr,
+                model_info=model_info,
+                version=job.version_count,
+                generated_title=generated_title,
+                generated_intro=generated_intro,
+                generated_style_section=generated_style_section,
+                generated_conclusion=generated_conclusion,
+                meta_title=meta_title,
+                meta_description=meta_description,
+                status='draft',
+                content_generated='completed',
+                featured_image_status='in_process',
+                style_images_status='in_process',
+                style_image_descriptions=style_dict
+            )
+            post.save()
+            # start images in background (as before)
+            threading.Thread(target=generate_post_images_task, args=(post.id,)).start()
+
+        else:
+            # master prompt flow (same as your current one)
+            system_prompt = (
+                "You are a professional SEO and content writer who returns STRICT JSON output for a blog article."
+                " Always return exactly this JSON structure: "
+                "{"
+                "  \"meta_title\": \"string\","
+                "  \"meta_description\": \"string\","
+                "  \"title\": \"string\","
+                "  \"introduction\": [\"string\", ...],"
+                "  \"styles\": [\"string\", ...],"
+                "  \"final_thoughts\": [\"string\", ...]"
+                " }"
+                " Important JSON rules:"
+                "- Use only double quotes (\"\") for JSON strings."
+                "- NEVER add markdown code fences."
+                "- Do not add any markdown or text outside the JSON object."
+                "- Arrays must contain only flat strings."
+            )
+            master_prompt_text = fill_prompt(pr.master_prompt)
+            json_text = gpt_content(system_prompt, master_prompt_text)
+            structured = json.loads(json_text)
+
+            post = Post.objects.create(
+                keyword=job.keyword,
+                prompt=pr,
+                model_info=model_info,
+                version=job.version_count,
+                generated_title=structured.get("title", ""),
+                generated_intro="".join(structured.get("introduction", [])),
+                generated_style_section="".join(structured.get("styles", [])),
+                generated_conclusion="".join(structured.get("final_thoughts", [])),
+                meta_title=structured.get("meta_title", ""),
+                meta_description=structured.get("meta_description", ""),
+                status='draft',
+                content_generated='completed',
+                featured_image_status='in_process',
+                style_images_status='in_process',
+            )
+            post.save()
+            threading.Thread(target=generate_post_images_task, args=(post.id,)).start()
+
+        # Done
+        job.post = post
+        job.status = 'done'
+        job.finished_at = timezone.now()
+        job.save(update_fields=['post', 'status', 'finished_at'])
+
+    except Exception as e:
+        job.status = 'failed'
+        job.error = str(e)
+        job.finished_at = timezone.now()
+        job.save(update_fields=['status', 'error', 'finished_at'])
 
 # =============================================================================
 # S3/Storage + WordPress Helpers
@@ -315,154 +510,91 @@ class KeywordAdmin(admin.ModelAdmin):
     generate_content_button.allow_tags = True
     
     def ajax_bulk_generate(self, request):
+        """
+        Enqueue bulk generation jobs instead of running them inline.
+        Expects JSON: { "keyword_ids":[...], "prompt_id":"...", "prompt_type":"individual|master", "version_count":N }
+        Returns an immediate thank-you message with current time and job ids.
+        """
         if request.method != 'POST':
             return JsonResponse({'success': False, 'message': 'Invalid method'}, status=405)
 
+        # Parse JSON body (or fallback to form-encoded)
         try:
-            payload = json.loads(request.body.decode())
+            payload = json.loads(request.body.decode() or "{}")
         except Exception:
             return JsonResponse({'success': False, 'message': 'Bad JSON'}, status=400)
 
-        keyword_ids = payload.get('keyword_ids') or []
-        prompt_id = payload.get('prompt_id')
-        prompt_type = payload.get('prompt_type')  # 'individual' or 'master'
-        version_count = int(payload.get('version_count') or 1)
+        keyword_ids = payload.get('keyword_ids') or request.POST.getlist('keyword_ids[]') or []
+        prompt_id = (payload.get('prompt_id') or request.POST.get('prompt_id') or '').strip()
+        prompt_type = (payload.get('prompt_type') or request.POST.get('prompt_type') or 'individual').strip().lower()
+        version_count = int(payload.get('version_count') or request.POST.get('version_count') or 1)
 
-        if not keyword_ids or not prompt_id or prompt_type not in ('individual', 'master'):
-            return JsonResponse({'success': False, 'message': 'Missing fields'}, status=400)
+        if not keyword_ids:
+            return JsonResponse({'success': False, 'message': 'Missing keyword_ids'}, status=400)
+        if not prompt_id:
+            return JsonResponse({'success': False, 'message': 'Missing prompt_id'}, status=400)
+        if prompt_type not in ('individual', 'master'):
+            return JsonResponse({'success': False, 'message': 'prompt_type must be "individual" or "master"'}, status=400)
 
-        try:
-            prompt = Prompt.objects.get(prompt_id=prompt_id)
-        except Prompt.DoesNotExist:
+        # Resolve prompt
+        pr = Prompt.objects.filter(prompt_id=prompt_id).first()
+        if not pr:
             return JsonResponse({'success': False, 'message': 'Prompt not found'}, status=404)
 
-        models = list(ModelInfo.objects.all())
-        if not models:
-            return JsonResponse({'success': False, 'message': 'No models available.'}, status=400)
+        created_jobs, errors = [], []
 
-        client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
-
-        def fill_prompt(tmpl, kw):
-            if not tmpl: return ''
-            return (tmpl
-                    .replace('{{keyword}}', kw.keyword)
-                    .replace('{{hairstyle_name}}', kw.keyword)
-                    .replace('{{version_count}}', str(version_count)))
-
-        def gpt_content(system_prompt, user_prompt):
-            if not user_prompt: return ''
-            resp = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[{"role":"system","content":system_prompt},
-                        {"role":"user","content":user_prompt}]
-            )
-            return resp.choices[0].message.content
-
-        def extract_styles_from_html(html):
-            pattern = r"<h2>(.*?)<\/h2>(.*?)(?=<h2>|$)"
-            matches = re.findall(pattern, html, re.DOTALL)
-            return [{"style_name": t.strip(), "html": f"<h2>{t.strip()}</h2>{c.strip()}"} for t, c in matches]
-
-        ok, failed = 0, []
         for kid in keyword_ids:
             try:
                 kw = Keyword.objects.get(pk=kid)
-                model_info = random.choice(models)
+            except Keyword.DoesNotExist:
+                errors.append({'id': kid, 'error': 'Keyword not found'})
+                continue
 
-                if prompt_type == 'individual':
-                    title_prompt = fill_prompt(prompt.title_prompt, kw)
-                    intro_prompt = fill_prompt(prompt.intro_prompt, kw)
-                    style_prompt = fill_prompt(prompt.style_prompt, kw)
-                    conclusion_prompt = fill_prompt(prompt.conclusion_prompt, kw)
-                    meta_data_prompt = fill_prompt(prompt.meta_data_prompt, kw)
+            job = GenerationJob.objects.create(
+                keyword=kw,
+                prompt=pr,
+                prompt_type=prompt_type,
+                version_count=version_count,
+                created_by=request.user if getattr(request, "user", None) and request.user.is_authenticated else None,
+                status='queued',
+            )
+            created_jobs.append(job.id)
 
-                    generated_title = gpt_content("", title_prompt).strip().strip('"').strip("'") if title_prompt else ''
-                    generated_intro = gpt_content("You are a helpful assistant that generates engaging article introductions. Do not use markdown.", intro_prompt) if intro_prompt else ''
-                    generated_style_section = gpt_content(
-                        f"You are a helpful assistant that generates detailed style descriptions. Use <h2> HTML headings for each style section, followed by paragraphs. Do not use markdown. Generate exactly {version_count} unique hairstyles.",
-                        style_prompt
-                    ) if style_prompt else ''
-                    generated_conclusion = gpt_content("You are a helpful assistant that generates article conclusions. Do not use markdown.", conclusion_prompt) if conclusion_prompt else ''
+        # Start/ensure the single FIFO worker is running
+        _ensure_worker_running()
 
-                    meta_title, meta_description = '', ''
-                    if meta_data_prompt:
-                        try:
-                            meta_json = gpt_content("Return JSON with meta_title and meta_description.", meta_data_prompt)
-                            meta_obj = json.loads(meta_json)
-                            meta_title = meta_obj.get('meta_title', '')
-                            meta_description = meta_obj.get('meta_description', '')
-                        except Exception:
-                            meta_description = meta_json if 'meta_json' in locals() else ''
+        return JsonResponse({
+            'success': True,
+            'queued': True,
+            'job_ids': created_jobs,
+            'errors': errors,
+            'message': f"✅ Thanks! {len(created_jobs)} request(s) queued at {timezone.now().strftime('%Y-%m-%d %H:%M:%S')} and will run one by one."
+        }, status=200)
 
-                    # image descriptions per style
-                    style_blocks = extract_styles_from_html(generated_style_section)
-                    style_image_descriptions = {}
-                    for blk in style_blocks:
-                        sname = blk["style_name"]
-                        desc = gpt_content(
-                            "You are an editorial stylist creating image descriptions for a fashion AI. Write a visual description of the haircut below in 35–60 words. Include hair length, texture, shape, sides, top, and camera angle.",
-                            f"Hairstyle: {sname}"
-                        ).strip()
-                        style_image_descriptions[sname] = desc
-
-                    post = Post.objects.create(
-                        keyword=kw, prompt=prompt, model_info=model_info, version=version_count,
-                        generated_title=generated_title, generated_intro=generated_intro,
-                        generated_style_section=generated_style_section, generated_conclusion=generated_conclusion,
-                        meta_title=meta_title, meta_description=meta_description,
-                        status='draft', content_generated='completed',
-                        featured_image_status='in_process', style_images_status='in_process',
-                        style_image_descriptions=style_image_descriptions
-                    )
-                    threading.Thread(target=generate_post_images_task, args=(post.id,)).start()
-
-                else:
-                    # master prompt
-                    master_prompt_text = fill_prompt(prompt.master_prompt, kw)
-                    system_prompt = (
-                        "You are a professional SEO and content writer who returns STRICT JSON output for a blog article."
-                        " Use keys: meta_title, meta_description, title, introduction[], styles[], final_thoughts[]."
-                        " Only raw JSON. No code fences, no extra text."
-                    )
-                    out = gpt_content(system_prompt, master_prompt_text)
-                    data_obj = json.loads(out)
-
-                    post = Post.objects.create(
-                        keyword=kw, prompt=prompt, model_info=model_info, version=version_count,
-                        generated_title=data_obj.get("title",""),
-                        generated_intro="".join(data_obj.get("introduction",[])),
-                        generated_style_section="".join(data_obj.get("styles",[])),
-                        generated_conclusion="".join(data_obj.get("final_thoughts",[])),
-                        meta_title=data_obj.get("meta_title",""),
-                        meta_description=data_obj.get("meta_description",""),
-                        status='draft', content_generated='completed',
-                        featured_image_status='in_process', style_images_status='in_process',
-                    )
-                    threading.Thread(target=generate_post_images_task, args=(post.id,)).start()
-
-                ok += 1
-            except Exception as e:
-                failed.append({'id': kid, 'error': str(e)})
-
-        return JsonResponse({'success': True,
-                            'message': f'Bulk generation queued. Success: {ok}, Failed: {len(failed)}',
-                            'failed': failed})
 
     def save_style_prompt(self, request):
+        """Save a style prompt (JSON body)."""
         if request.method != "POST":
             return HttpResponseBadRequest("Only POST requests allowed.")
 
+        # Accept JSON body; return consistent errors
         try:
-            data = json.loads(request.body)
-            style_name = data.get("style_name")
-            content = data.get("content")
-            object_id = data.get("object_id")
+            if not request.body:
+                return JsonResponse({"success": False, "error": "Empty body"}, status=400)
+            data = json.loads(request.body.decode())
+        except Exception as e:
+            return JsonResponse({"success": False, "error": f"Invalid JSON: {e}"}, status=400)
 
-            if not all([style_name, content, object_id]):
-                return HttpResponseBadRequest("Missing one or more required fields.")
+        style_name = (data.get("style_name") or "").strip()
+        content = data.get("content")
+        object_id = data.get("object_id")
 
-            obj = get_object_or_404(Post, pk=object_id)
+        if not style_name or content is None or not object_id:
+            return JsonResponse({"success": False, "error": "Missing one or more required fields."}, status=400)
 
+        obj = get_object_or_404(Post, pk=object_id)
+
+        try:
             if style_name == "featured_image":
                 obj.featured_prompt_text = content
                 obj.save(update_fields=["featured_prompt_text"])
@@ -471,10 +603,10 @@ class KeywordAdmin(admin.ModelAdmin):
                 prompts[style_name] = content
                 obj.style_prompts = prompts
                 obj.save(update_fields=["style_prompts"])
-
-            return JsonResponse({"success": True})
         except Exception as e:
             return JsonResponse({"success": False, "error": str(e)}, status=500)
+
+        return JsonResponse({"success": True})
 
     def ajax_regenerate_single_style(self, request):
         if request.method == 'POST':
@@ -496,210 +628,35 @@ class KeywordAdmin(admin.ModelAdmin):
         return JsonResponse({'success': False, 'message': 'Invalid request.'})
 
     def ajax_generate_versions(self, request):
-        if request.method == 'POST':
-            keyword_id = request.POST.get('keyword_id')
-            prompt_id = request.POST.get('prompt_id')
-            prompt_type = request.POST.get('prompt_type')
-            version_count = int(request.POST.get('version_count', 1))
+        if request.method != 'POST':
+            return JsonResponse({'success': False, 'message': 'Invalid request.'})
 
-            keyword = get_object_or_404(Keyword, pk=keyword_id)
-            prompt = get_object_or_404(Prompt, prompt_id=prompt_id)
-            models = list(ModelInfo.objects.all())
-            if not models:
-                return JsonResponse({'success': False, 'message': 'No models available.'})
-            client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
-            model_info = random.choice(models)
+        keyword_id = request.POST.get('keyword_id')
+        prompt_id = request.POST.get('prompt_id')
+        prompt_type = (request.POST.get('prompt_type') or 'individual').strip().lower()
+        version_count = int(request.POST.get('version_count', 1))
 
-            def fill_prompt(tmpl):
-                if tmpl:
-                    return (tmpl
-                            .replace('{{keyword}}', keyword.keyword)
-                            .replace('{{hairstyle_name}}', keyword.keyword)
-                            .replace('{{version_count}}', str(version_count)))
-                return ''
+        keyword = get_object_or_404(Keyword, pk=keyword_id)
+        prompt = get_object_or_404(Prompt, prompt_id=prompt_id)
 
-            def gpt_content(system_prompt, user_prompt):
-                if not user_prompt:
-                    return ''
-                response = client.chat.completions.create(
-                    model="gpt-4o",
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ]
-                )
-                return response.choices[0].message.content
+        job = GenerationJob.objects.create(
+            keyword=keyword,
+            prompt=prompt,
+            prompt_type=prompt_type,
+            version_count=version_count,
+            created_by=request.user if request.user.is_authenticated else None,
+            status='queued',
+        )
 
-            def extract_styles_from_html(html):
-                pattern = r"<h2>(.*?)<\/h2>(.*?)(?=<h2>|$)"
-                matches = re.findall(pattern, html, re.DOTALL)
-                return [{"style_name": title.strip(), "html": f"<h2>{title.strip()}</h2>{content.strip()}"} for title, content in matches]
+        # start (or reuse) the single worker thread
+        _ensure_worker_running()
 
-            if prompt_type == 'individual':
-                title_prompt = fill_prompt(prompt.title_prompt)
-                intro_prompt = fill_prompt(prompt.intro_prompt)
-                style_prompt = fill_prompt(prompt.style_prompt)
-                conclusion_prompt = fill_prompt(prompt.conclusion_prompt)
-                meta_data_prompt = fill_prompt(prompt.meta_data_prompt)
-
-                generated_title = gpt_content("", title_prompt)
-                if generated_title:
-                    generated_title = generated_title.strip().strip('"').strip("'")
-                generated_intro = gpt_content(
-                    "You are a helpful assistant that generates engaging article introductions. Do not use markdown.",
-                    intro_prompt
-                )
-                generated_style_section = gpt_content(
-                    f"You are a helpful assistant that generates detailed style descriptions. "
-                    f"Use <h2> HTML headings for each style section, followed by paragraphs. "
-                    f"Do not use markdown. Generate exactly {version_count} unique hairstyles.",
-                    style_prompt
-                )
-
-                style_blocks = extract_styles_from_html(generated_style_section)
-                style_image_descriptions = []
-                for block in style_blocks:
-                    style_name = block["style_name"]
-                    image_desc = gpt_content(
-                        "You are an editorial stylist creating image descriptions for a fashion AI. "
-                        "Write a visual description of the haircut below in 35–60 words. "
-                        "Include hair length, texture, shape, sides, top, and camera angle.",
-                        f"Hairstyle: {style_name}"
-                    )
-                    style_image_descriptions.append({
-                        "style_name": style_name,
-                        "image_style_description": image_desc.strip()
-                    })
-                style_dict = {item["style_name"]: item["image_style_description"] for item in style_image_descriptions}
-
-                generated_conclusion = gpt_content(
-                    "You are a helpful assistant that generates article conclusions. Do not use markdown.",
-                    conclusion_prompt
-                )
-                meta_title = ''
-                meta_description = ''
-                if meta_data_prompt:
-                    meta_json = gpt_content("Return JSON with meta_title and meta_description.", meta_data_prompt)
-                    try:
-                        meta_data = json.loads(meta_json)
-                        meta_title = meta_data.get('meta_title', '')
-                        meta_description = meta_data.get('meta_description', '')
-                    except Exception:
-                        meta_title = ''
-                        meta_description = meta_json
-
-                post = Post.objects.create(
-                    keyword=keyword,
-                    prompt=prompt,
-                    model_info=model_info,
-                    version=version_count,
-                    generated_title=generated_title,
-                    generated_intro=generated_intro,
-                    generated_style_section=generated_style_section,
-                    generated_conclusion=generated_conclusion,
-                    meta_title=meta_title,
-                    meta_description=meta_description,
-                    status='draft',
-                    content_generated='completed',
-                    featured_image_status='in_process',
-                    style_images_status='in_process',
-                    style_image_descriptions=style_dict
-                )
-                post.save()
-
-                threading.Thread(target=generate_post_images_task, args=(post.id,)).start()
-
-                return JsonResponse({
-                    'success': True,
-                    'message': 'Content generated. Images are being generated in the background.',
-                    'post_id': post.id,
-                })
-
-            else:
-                # Master prompt flow
-                master_prompt_text = fill_prompt(prompt.master_prompt)
-                system_prompt = (
-                    "You are a professional SEO and content writer who returns STRICT JSON output for a blog article."
-                    " Always return exactly this JSON structure: "
-                    "{"
-                    "  \"meta_title\": \"string\","
-                    "  \"meta_description\": \"string\","
-                    "  \"title\": \"string\","
-                    "  \"introduction\": [\"string\", ...],"
-                    "  \"styles\": [\"string\", ...],"
-                    "  \"final_thoughts\": [\"string\", ...]"
-                    " }"
-                    " Important JSON rules:"
-                    "- Use only double quotes (\"\") for JSON strings."
-                    "- NEVER add markdown code fences (no ```json or ```)."
-                    "- Do not add any markdown, bullet points, or text outside the JSON object."
-                    "- Only output the raw JSON object. Nothing before or after it."
-                    "- Arrays must contain only flat strings. No nested key:value pairs inside arrays."
-                    "- Ensure the JSON parses with json.loads() or PHP json_decode()."
-                    "- Validate carefully before finishing."
-                    " Here is an example format you must match exactly:"
-                    "{"
-                    "  \"meta_title\": \"Example Title\","
-                    "  \"meta_description\": \"Example description.\","
-                    "  \"title\": \"Example Title\","
-                    "  \"introduction\": [\"<p>Intro paragraph.</p>\"],"
-                    "  \"styles\": [\"<h2>Style Name</h2><p>Description.</p>\"],"
-                    "  \"final_thoughts\": [\"<p>Closing thoughts.</p>\"]"
-                    "}"
-                )
-                def gpt_content(system_prompt, user_prompt):
-                    if not user_prompt:
-                        return ''
-                    response = client.chat.completions.create(
-                        model="gpt-4o",
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt}
-                        ]
-                    )
-                    return response.choices[0].message.content
-
-                generated_content_json = gpt_content(system_prompt, master_prompt_text)
-                try:
-                    structured_content = json.loads(generated_content_json)
-                except Exception:
-                    structured_content = {"error": "Invalid JSON returned by GPT"}
-
-                if "error" not in structured_content:
-                    meta_title = structured_content.get("meta_title", "")
-                    meta_description = structured_content.get("meta_description", "")
-                    title = structured_content.get("title", "")
-                    introduction_html = "".join(structured_content.get("introduction", []))
-                    styles_html = "".join(structured_content.get("styles", []))
-                    final_thoughts_html = "".join(structured_content.get("final_thoughts", []))
-
-                    post = Post.objects.create(
-                        keyword=keyword,
-                        prompt=prompt,
-                        model_info=model_info,
-                        version=version_count,
-                        generated_title=title,
-                        generated_intro=introduction_html,
-                        generated_style_section=styles_html,
-                        generated_conclusion=final_thoughts_html,
-                        meta_title=meta_title,
-                        meta_description=meta_description,
-                        status='draft',
-                        content_generated='completed',
-                        featured_image_status='in_process',
-                        style_images_status='in_process',
-                    )
-                    post.save()
-                    threading.Thread(target=generate_post_images_task, args=(post.id,)).start()
-                else:
-                    print("GPT returned invalid JSON:", structured_content)
-
-                return JsonResponse({
-                    'success': True,
-                    'message': 'Style section generated from master prompt. Images are being generated in the background.',
-                })
-
-        return JsonResponse({'success': False, 'message': 'Invalid request.'})
+        return JsonResponse({
+            'success': True,
+            'queued': True,
+            'job_id': job.id,
+            'message': f"✅ Thanks! Your request was queued at {timezone.now().strftime('%Y-%m-%d %H:%M:%S')}.",
+        })
 
     def ajax_regenerate_versions(self, request):
         if request.method == 'POST':
@@ -1503,3 +1460,113 @@ def extract_styles_by_h2(style_section_html):
         return []
     pattern = r'<h2>(.*?)</h2>'
     return re.findall(pattern, style_section_html)
+
+
+# make sure GenerationJob is imported:
+# from .models import Keyword, Prompt, ModelInfo, Post, GenerationJob
+
+# ---------- Actions ----------
+def retry_jobs(modeladmin, request, queryset):
+    updated = queryset.update(
+        status='queued',
+        error='',
+        started_at=None,
+        finished_at=None,
+    )
+    try:
+        _ensure_worker_running()  # uses your queue worker helper
+    except Exception:
+        pass
+    modeladmin.message_user(request, f"Re-queued {updated} job(s).")
+
+retry_jobs.short_description = "Retry (re-queue) selected job(s)"
+
+def cancel_jobs(modeladmin, request, queryset):
+    updated = queryset.exclude(status='done').update(
+        status='failed',
+        error='Cancelled by admin',
+        finished_at=timezone.now(),
+    )
+    modeladmin.message_user(request, f"Cancelled {updated} job(s).")
+
+cancel_jobs.short_description = "Cancel (mark failed) selected job(s)"
+
+def run_worker_now(modeladmin, request, queryset):
+    try:
+        _ensure_worker_running()
+        modeladmin.message_user(request, "Worker started (or already running).")
+    except Exception as e:
+        modeladmin.message_user(request, f"Unable to start worker: {e}", level=messages.ERROR)
+
+run_worker_now.short_description = "Start queue worker"
+
+@admin.register(GenerationJob)
+class GenerationJobAdmin(admin.ModelAdmin):
+    # Optional autorefresh template; add it in step 2 or remove this line
+    change_list_template = "admin/WordAI_Publisher/generationjob_changelist.html"
+
+    list_display = (
+        'id',
+        'keyword_link',
+        'prompt_link',
+        'prompt_type',
+        'version_count',
+        'status_badge',
+        'created_at',
+        'started_at',
+        'finished_at',
+        'post_link',
+    )
+    list_filter = ('status', 'prompt_type', 'created_at')
+    search_fields = ('keyword__keyword', 'prompt__prompt_id', 'post__id')
+    readonly_fields = ('error', 'created_at', 'started_at', 'finished_at', 'post')
+
+    actions = [retry_jobs, cancel_jobs, run_worker_now]
+    ordering = ('created_at',)
+
+    def keyword_link(self, obj):
+        if not obj.keyword_id:
+            return "-"
+        url = reverse('admin:WordAI_Publisher_keyword_change', args=[obj.keyword_id])
+        return format_html('<a href="{}">{}</a>', url, obj.keyword.keyword)
+    keyword_link.short_description = "Keyword"
+
+    def prompt_link(self, obj):
+        if not obj.prompt_id:
+            return "-"
+        url = reverse('admin:WordAI_Publisher_prompt_change', args=[obj.prompt_id])
+        return format_html('<a href="{}">{}</a>', url, obj.prompt.prompt_id)
+    prompt_link.short_description = "Prompt"
+
+    def post_link(self, obj):
+        if not obj.post_id:
+            return "-"
+        url = reverse('admin:WordAI_Publisher_post_change', args=[obj.post_id])
+        return format_html('<a href="{}">Post #{}</a>', url, obj.post_id)
+    post_link.short_description = "Post"
+
+    def status_badge(self, obj):
+        colors = {
+            'queued': '#ff9800',   # orange
+            'running': '#2196f3',  # blue
+            'done': '#4caf50',     # green
+            'failed': '#f44336',   # red
+        }
+        color = colors.get(obj.status, '#777')
+        return format_html('<span style="color:{};font-weight:600">{}</span>', color, obj.status)
+    status_badge.short_description = "Status"
+
+    def changelist_view(self, request, extra_context=None):
+        """
+        Default the list to 'status=queued' unless the user already filtered by something.
+        Also pass an autorefresh interval to the template (optional).
+        """
+        if 'status__exact' not in request.GET and 'q' not in request.GET:
+            q = request.GET.copy()
+            q['status__exact'] = 'queued'
+            request.GET = q
+            request.META['QUERY_STRING'] = q.urlencode()
+
+        extra_context = extra_context or {}
+        extra_context['auto_refresh_seconds'] = 10  # tweak as desired
+        return super().changelist_view(request, extra_context=extra_context)

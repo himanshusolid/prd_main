@@ -8,58 +8,55 @@
 {% block extrahead %}
   {{ block.super }}
   <style>
-   #generateContentModal {
-    display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100vw; height: 100vh;
-    background: rgba(0,0,0,0.4); align-items: center; justify-content: center;
-}
-#generateContentModal .modal-content {
-    background: #fff; padding: 30px; border-radius: 8px; min-width: 350px; max-width: 90vw;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-}
-#generateContentModal label { display: block; margin-top: 10px; }
-#generateContentModal input, #generateContentModal select { width: 100%; margin-top: 5px; }
-#generateContentModal .modal-actions { margin-top: 20px; text-align: right; }
-.spinner {
-  border: 6px solid #f3f3f3;
-  border-top: 6px solid #3498db;
-  border-radius: 50%;
-  width: 40px;
-  height: 40px;
-  animation: spin 1s linear infinite;
-  display: inline-block;
-}
-@keyframes spin {
-  0% { transform: rotate(0deg);}
-  100% { transform: rotate(360deg);}
-}
-/* make the BULK modal look the same as the single modal */
-#bulkGenerateModal{
-  display:none; position:fixed; z-index:9999; left:0; top:0;
-  width:100vw; height:100vh; background:rgba(0,0,0,.4);
-  align-items:center; justify-content:center;
-}
-#bulkGenerateModal .modal-content{
-  background:#fff; padding:30px; border-radius:8px;
-  min-width:350px; max-width:90vw; box-shadow:0 2px 10px rgba(0,0,0,.2);
-}
-#bulkGenerateModal label{ display:block; margin-top:10px; }
-#bulkGenerateModal input, #bulkGenerateModal select{ width:100%; margin-top:5px; }
-#bulkGenerateModal .modal-actions{ margin-top:20px; text-align:right; }
+    /* ---------- Selection modals (single + bulk) ---------- */
+    #generateContentModal, #bulkGenerateModal {
+      display:none; position:fixed; z-index:9999; left:0; top:0; width:100vw; height:100vh;
+      background:rgba(0,0,0,.4); align-items:center; justify-content:center;
+    }
+    #generateContentModal .modal-content, #bulkGenerateModal .modal-content {
+      background:#fff; padding:30px; border-radius:8px; min-width:360px; max-width:92vw;
+      box-shadow:0 10px 30px rgba(0,0,0,.20);
+    }
+    #generateContentModal label, #bulkGenerateModal label { display:block; margin-top:10px; }
+    #generateContentModal input, #generateContentModal select,
+    #bulkGenerateModal input, #bulkGenerateModal select { width:100%; margin-top:6px; }
+    .modal-actions { margin-top:20px; text-align:right; }
+    .spinner {
+      border: 6px solid #f3f3f3; border-top: 6px solid #0b5fff; border-radius: 50%;
+      width: 44px; height: 44px; animation: spin 1s linear infinite; display:inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* ---------- Overlay loader/thanks (unified for both flows) ---------- */
+    .wpai-modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.45);
+      display: none; align-items: center; justify-content: center; z-index: 10000;
+    }
+    .wpai-modal {
+      width: 440px; max-width: 92vw; background: #fff; border-radius: 12px;
+      padding: 24px 22px; box-shadow: 0 18px 40px rgba(0,0,0,.28);
+      font: 14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+    }
+    .wpai-modal h3 { margin: 0 0 10px; font-size: 18px; text-align:center; }
+    .wpai-center { text-align: center; }
+    .wpai-muted { color: #666; }
+    .wpai-hidden { display:none; }
+    .wpai-btn { display:inline-block; padding:8px 14px; border-radius:8px; border:1px solid #d0d0d0; background:#f7f7f7; cursor:pointer; }
   </style>
 {% endblock %}
 
 {% block content %}
 {{ block.super }}
 
-<!-- SINGLE-ROW MODAL: restored hidden keyword_id -->
+<!-- ========== SINGLE GENERATE MODAL ========== -->
 <div id="generateContentModal">
   <div class="modal-content">
     <h3>Generate Post</h3>
     <form id="generateContentForm">
-      <input type="hidden" id="single-keyword-id" name="keyword_id" />  <!-- ✅ restored -->
+      <input type="hidden" id="single-keyword-id" name="keyword_id" />
       <label for="prompt_id">Select Prompt:</label>
       <select name="prompt_id" id="prompt_id">
+        <option value="">Select…</option>
         {% for prompt in prompts %}
           <option value="{{ prompt.prompt_id }}">{{ prompt.prompt_id }}</option>
         {% endfor %}
@@ -79,193 +76,204 @@
         <button type="submit" id="gen-confirm-btn">Generate</button>
       </div>
     </form>
-    <div id="generate-loader" style="display:none;text-align:center;margin-top:20px;">
-      <div class="spinner" style="margin:auto;"></div>
-      <div style="margin-top:10px;">Generating versions, please wait...</div>
-    </div>
   </div>
 </div>
 
-<!-- BULK MODAL (unchanged) -->
-<div id="bulkGenerateModal" style="display:none;position:fixed;z-index:9999;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,.4);align-items:center;justify-content:center;">
+<!-- ========== BULK GENERATE MODAL ========== -->
+<div id="bulkGenerateModal">
   <div class="modal-content">
     <h3>Generate Post (Bulk)</h3>
     <form id="bulkGenerateForm">
       <label for="bulk_prompt_id">Select Prompt:</label>
       <select name="prompt_id" id="bulk_prompt_id">
+        <option value="">Select…</option>
         {% for prompt in prompts %}
           <option value="{{ prompt.prompt_id }}">{{ prompt.prompt_id }}</option>
         {% endfor %}
       </select>
+
       <label for="bulk_prompt_type">Select Prompt type:</label>
       <select name="prompt_type" id="bulk_prompt_type">
         <option value="individual">individual Prompt</option>
         <option value="master">Master Prompt</option>
       </select>
+
       <label for="bulk-version-count">Number of style Revisions:</label>
       <input type="number" id="bulk-version-count" name="version_count" min="1" value="10" required />
+
       <div class="modal-actions">
         <button type="button" id="bulk-cancel">Cancel</button>
         <button type="submit" id="bulk-generate">Generate</button>
       </div>
     </form>
-    <div id="bulk-loader" style="display:none;text-align:center;margin-top:20px;">
-      <div class="spinner" style="margin:auto;"></div>
-      <div style="margin-top:10px;">Starting bulk generation…</div>
+  </div>
+</div>
+
+<!-- ========== UNIFIED 5s LOADER + THANK-YOU OVERLAY ========== -->
+<div id="wpaiEnqueueOverlay" class="wpai-modal-overlay">
+  <div class="wpai-modal">
+    <!-- Loading -->
+    <div id="wpaiStateLoading">
+      <h3>Submitting your request…</h3>
+      <div class="wpai-center" style="margin:14px 0;"><div class="spinner"></div></div>
+      <p class="wpai-center wpai-muted">This will take only a moment.</p>
+    </div>
+    <!-- Done -->
+    <div id="wpaiStateDone" class="wpai-hidden">
+      <h3>Thank you!</h3>
+      <p class="wpai-center">
+        We’re running your request in the background.<br/>
+        Please refresh this page after a few seconds to see updates.
+      </p>
+      <p id="wpaiTime" class="wpai-center wpai-muted" style="margin-top:6px;"></p>
+      <div class="wpai-center" style="margin-top:12px;">
+        <button type="button" class="wpai-btn" id="wpaiCloseBtn">Close</button>
+      </div>
     </div>
   </div>
 </div>
 
 <script>
-/* ===== BULK ACTION ONLY ===== */
+/* ---------- Utilities ---------- */
 (function(){
+  function getCookie(name) {
+    const m = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+    return m ? decodeURIComponent(m.pop()) : '';
+  }
+  const CSRF = getCookie('csrftoken');
+
+  const OVERLAY = () => document.getElementById('wpaiEnqueueOverlay');
+  const STATE_LOADING = () => document.getElementById('wpaiStateLoading');
+  const STATE_DONE = () => document.getElementById('wpaiStateDone');
+  const TIME_EL = () => document.getElementById('wpaiTime');
+
+  function openOverlay() {
+    OVERLAY().style.display = 'flex';
+    STATE_LOADING().classList.remove('wpai-hidden');
+    STATE_DONE().classList.add('wpai-hidden');
+  }
+  function showThanks(serverMsg) {
+    const now = new Date();
+    TIME_EL().textContent = 'Queued at ' + now.toLocaleString();
+    STATE_LOADING().classList.add('wpai-hidden');
+    STATE_DONE().classList.remove('wpai-hidden');
+  }
+  function closeOverlay() { OVERLAY().style.display = 'none'; }
+
+  document.getElementById('wpaiCloseBtn')?.addEventListener('click', closeOverlay);
+
+  async function postJSON(url, payload) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF, 'Accept':'application/json' },
+      body: JSON.stringify(payload)
+    });
+    let data = {};
+    try { data = await res.json(); } catch(_){}
+    return { ok: res.ok, status: res.status, data };
+  }
+
+  async function withFiveSecondLoader(doRequest) {
+    openOverlay();
+    const start = Date.now();
+    let result;
+    try {
+      result = await doRequest();
+    } catch (e) {
+      result = { ok:false, data:{ message: 'Network error: ' + e } };
+    }
+    const elapsed = Date.now() - start;
+    const wait = Math.max(0, 5000 - elapsed); // ensure a full 5 seconds
+    await new Promise(r => setTimeout(r, wait));
+    showThanks(result?.data?.message);
+    // Optional auto-refresh after a short pause
+    setTimeout(function(){ location.reload(); }, 6500);
+  }
+
+  /* ---------- Bulk flow wiring ---------- */
   const bulkModal  = document.getElementById('bulkGenerateModal');
   const bulkForm   = document.getElementById('bulkGenerateForm');
-  const bulkLoader = document.getElementById('bulk-loader');
-
   function openBulk(){ bulkModal.style.display = 'flex'; }
   function closeBulk(){ bulkModal.style.display = 'none'; }
   document.getElementById('bulk-cancel')?.addEventListener('click', closeBulk);
 
-  function getSelectedIds(){
+  function selectedKeywordIds(){
     return Array.from(document.querySelectorAll('input.action-select:checked')).map(cb => cb.value);
   }
 
-  // Intercept admin action submit -> show BULK modal
   const actionForm   = document.getElementById('changelist-form');
   const actionSelect = document.querySelector('select[name="action"]');
-
   if (actionForm) {
     actionForm.addEventListener('submit', function(e){
       const chosen = actionSelect ? actionSelect.value : null;
       if (chosen === 'generate_content_for_selected') {
         e.preventDefault();
-        const ids = getSelectedIds();
+        const ids = selectedKeywordIds();
         if (!ids.length) { alert('Please select at least one keyword.'); return; }
         openBulk();
       }
     });
   }
 
-  // Submit BULK to new endpoint
-  bulkForm.addEventListener('submit', async function(e){
+  bulkForm.addEventListener('submit', function(e){
     e.preventDefault();
-    const ids = Array.from(document.querySelectorAll('input.action-select:checked')).map(cb => cb.value);
+    const ids = selectedKeywordIds();
     if (!ids.length) { alert('Please select at least one keyword.'); return; }
 
     const payload = {
       keyword_ids: ids,
       prompt_id: document.getElementById('bulk_prompt_id').value,
       prompt_type: document.getElementById('bulk_prompt_type').value,
-      version_count: document.getElementById('bulk-version-count').value || 1
+      version_count: parseInt(document.getElementById('bulk-version-count').value || '1', 10)
     };
-
-    bulkLoader.style.display = 'block';
-    Array.from(bulkForm.elements).forEach(el => el.disabled = true);
-
-    try{
-      const res = await fetch("{% url 'admin:ajax_bulk_generate' %}", {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': (document.querySelector('[name=csrfmiddlewaretoken]')||{}).value
-        },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json();
-
-      bulkLoader.style.display = 'none';
-      Array.from(bulkForm.elements).forEach(el => el.disabled = false);
-
-      if (res.ok && data.success){
-        alert(data.message || 'Bulk generation queued.');
-        closeBulk();
-        window.location.reload();
-      } else {
-        alert(data.message || 'Failed to start bulk generation.');
-      }
-    }catch(err){
-      bulkLoader.style.display = 'none';
-      Array.from(bulkForm.elements).forEach(el => el.disabled = false);
-      alert('Network error: ' + err);
-    }
+    closeBulk(); // close input modal
+    withFiveSecondLoader(() =>
+      postJSON("{% url 'admin:ajax_bulk_generate' %}", payload)
+    );
   });
-})();
-</script>
 
-<script>
-/* ===== SINGLE-ROW BUTTON ONLY ===== */
-(function(){
-  const modal  = document.getElementById('generateContentModal');
-  const form   = document.getElementById('generateContentForm');
-  const loader = document.getElementById('generate-loader');
-  const hidId  = document.getElementById('single-keyword-id');
-
-  function openSingle(id){ hidId.value = id; modal.style.display = 'flex'; }
-  function closeSingle(){ modal.style.display = 'none'; hidId.value = ''; }
+  /* ---------- Single flow wiring ---------- */
+  const singleModal  = document.getElementById('generateContentModal');
+  const singleForm   = document.getElementById('generateContentForm');
+  const singleIdHid  = document.getElementById('single-keyword-id');
+  function openSingle(id){ singleIdHid.value = id; singleModal.style.display = 'flex'; }
+  function closeSingle(){ singleModal.style.display = 'none'; singleIdHid.value = ''; }
   document.getElementById('gen-cancel-btn')?.addEventListener('click', closeSingle);
 
-  // Robust event delegation for row buttons labeled "Generate Content"
+  // Open modal when clicking "Generate Content" link in the table
   document.addEventListener('click', function(e){
     const a = e.target.closest('a');
     if (!a) return;
-    const label = (a.textContent || '').trim().toLowerCase();
-    if (label !== 'generate content') return;
+    if ((a.textContent || '').trim().toLowerCase() !== 'generate content') return;
 
-    // Extract ID from data attribute OR from href pattern OR from the row checkbox
+    // Try to find the row's id
     let id = a.dataset.keywordId || null;
-    if (!id) {
-      const href = a.getAttribute('href') || '';
-      let m = href.match(/\/generate-content\/(\d+)\/?$/i);  // if your link goes to generate view
-      if (m) id = m[1];
-      if (!id) { m = href.match(/(\d+)\/?$/); if (m) id = m[1]; }
-    }
     if (!id) {
       const tr = a.closest('tr');
       const cb = tr && tr.querySelector('input.action-select');
       if (cb) id = cb.value;
     }
-    if (!id) return;  // not our button
+    if (!id) return;
 
     e.preventDefault();
     openSingle(id);
   });
 
-  // Submit SINGLE to your existing endpoint
-  form.addEventListener('submit', async function(e){
+  singleForm.addEventListener('submit', function(e){
     e.preventDefault();
-    const id = hidId.value;
-    if (!id) { alert('Missing keyword id'); return; }
+    const kid = singleIdHid.value;
+    if (!kid) { alert('Missing keyword id'); return; }
 
-    const fd = new FormData(form);
-    fd.set('keyword_id', id); // ensure present
-
-    loader.style.display = 'block';
-    Array.from(form.elements).forEach(el => el.disabled = true);
-
-    try{
-      const res = await fetch('/admin/WordAI_Publisher/keyword/ajax-generate-versions/', {
-        method: 'POST',
-        headers: { 'X-CSRFToken': (document.querySelector('[name=csrfmiddlewaretoken]')||{}).value },
-        body: fd
-      });
-      const data = await res.json();
-
-      loader.style.display = 'none';
-      Array.from(form.elements).forEach(el => el.disabled = false);
-
-      if (res.ok && data.success){
-        alert(data.message || 'Generation started.');
-        closeSingle();
-        window.location.reload();
-      } else {
-        alert(data.message || 'Failed to start generation.');
-      }
-    }catch(err){
-      loader.style.display = 'none';
-      Array.from(form.elements).forEach(el => el.disabled = false);
-      alert('Network error: ' + err);
-    }
+    const payload = {
+      keyword_id: kid,
+      prompt_id: document.getElementById('prompt_id').value,
+      prompt_type: document.getElementById('prompt_type').value,
+      version_count: parseInt(document.getElementById('modal-version-count').value || '1', 10)
+    };
+    closeSingle(); // close input modal
+    withFiveSecondLoader(() =>
+      postJSON("{% url 'admin:ajax_generate_versions' %}", payload)
+    );
   });
 })();
 </script>
