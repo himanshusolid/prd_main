@@ -56,23 +56,111 @@ def _queue_runner():
             break
         _run_generation_job(job.id)
 
+
+# =============== LLM helpers ===============
+def _gpt_client():
+    return openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+
+def gpt_content(client, system_prompt, user_prompt):
+    if not user_prompt:
+        return ''
+    resp = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": system_prompt or ""},
+            {"role": "user", "content": user_prompt or ""}
+        ]
+    )
+    return (resp.choices[0].message.content or "").strip()
+
+
+# =============== parsing, uniquifying, top-up helpers ===============
+def _slugify_title(s: str) -> str:
+    s = unicodedata.normalize("NFKD", s or "").strip().lower()
+    s = re.sub(r"<[^>]+>", "", s)
+    s = re.sub(r"[^\w\s-]", "", s)
+    s = re.sub(r"\s+", "-", s).strip("-")
+    return s
+
+def extract_styles_from_html(html: str):
+    """
+    Parse <h2>Title</h2> blocks and the content following each until the next <h2>.
+    Robust to attributes and case.
+    Returns a list of {"style_name": ..., "html": "<h2>..</h2>..."} preserving order.
+    """
+    pattern = re.compile(
+        r"<h2\b[^>]*>(.*?)<\/h2>(.*?)(?=<h2\b|$)",
+        flags=re.DOTALL | re.IGNORECASE
+    )
+    matches = pattern.findall(html or "")
+    blocks = []
+    for raw_title, content in matches:
+        # Strip any markup inside title and unescape entities
+        clean_title = re.sub(r"<[^>]+>", "", raw_title or "")
+        clean_title = (clean_title or "").strip()
+        if not clean_title:
+            continue
+        content = (content or "").strip()
+        blocks.append({
+            "style_name": clean_title,
+            "html": f"<h2>{clean_title}</h2>{content}"
+        })
+    return blocks
+
+def uniquify_titles(items):
+    """
+    If a style name repeats, append " (2)", " (3)", ... so dict keys stay unique.
+    """
+    seen = {}
+    out = []
+    for it in items:
+        base = (it.get("style_name") or "").strip()
+        if not base:
+            continue
+        if base in seen:
+            seen[base] += 1
+            new_name = f"{base} ({seen[base]})"
+        else:
+            seen[base] = 1
+            new_name = base
+        out.append({**it, "style_name": new_name})
+    return out
+
+def _titles_set(items):
+    return {it["style_name"] for it in items if it.get("style_name")}
+
+def top_up_missing_styles(client, system_prompt, base_style_prompt, have_titles, need_count):
+    """
+    If the model returned fewer than requested, ask for ONLY the missing count,
+    excluding titles we already have.
+    """
+    if need_count <= 0:
+        return []
+
+    exclude_list = "\n".join(f"- {t}" for t in sorted(have_titles)) if have_titles else "- (none)"
+    user_prompt = (
+        f"{base_style_prompt}\n\n"
+        f"IMPORTANT RULES:\n"
+        f"- Do NOT repeat any of these existing style names:\n{exclude_list}\n"
+        f"- Generate exactly {need_count} additional, unique hairstyles.\n"
+        f"- Format: Use <h2>Title</h2> followed by paragraphs for each style. No markdown."
+    )
+
+    resp = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+    )
+    more_html = (resp.choices[0].message.content or "").strip()
+    return extract_styles_from_html(more_html)
+
+
+# =============== Main worker ===============
 def _run_generation_job(job_id: int):
-    """Do the same work you do today, but for a single queued job."""
-    client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
-
-    def gpt_content(system_prompt, user_prompt):
-        if not user_prompt:
-            return ''
-        resp = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
-        )
-        return resp.choices[0].message.content
-
-    def extract_styles_from_html(html):
-        pattern = r"<h2>(.*?)<\/h2>(.*?)(?=<h2>|$)"
-        matches = re.findall(pattern or "", html or "", re.DOTALL)
-        return [{"style_name": title.strip(), "html": f"<h2>{title.strip()}</h2>{content.strip()}"} for title, content in matches]
+    """Process a single queued job."""
+    client = _gpt_client()
 
     job = GenerationJob.objects.select_related('keyword', 'prompt').get(pk=job_id)
     if not job.keyword or not job.prompt:
@@ -104,31 +192,63 @@ def _run_generation_job(job_id: int):
 
         pr = job.prompt
         if job.prompt_type == 'individual':
-            title_prompt = fill_prompt(pr.title_prompt)
-            intro_prompt = fill_prompt(pr.intro_prompt)
-            style_prompt = fill_prompt(pr.style_prompt)
-            conclusion_prompt = fill_prompt(pr.conclusion_prompt)
-            meta_data_prompt = fill_prompt(pr.meta_data_prompt)
+            title_prompt = fill_prompt(getattr(pr, 'title_prompt', ''))
+            intro_prompt = fill_prompt(getattr(pr, 'intro_prompt', ''))
+            style_prompt = fill_prompt(getattr(pr, 'style_prompt', ''))
+            conclusion_prompt = fill_prompt(getattr(pr, 'conclusion_prompt', ''))
+            meta_data_prompt = fill_prompt(getattr(pr, 'meta_data_prompt', ''))
 
-            generated_title = gpt_content("", title_prompt)
+            # Title
+            generated_title = gpt_content(client, "", title_prompt)
             if generated_title:
                 generated_title = generated_title.strip().strip('"').strip("'")
 
+            # Intro
             generated_intro = gpt_content(
+                client,
                 "You are a helpful assistant that generates engaging article introductions. Do not use markdown.",
                 intro_prompt
             )
+
+            # --- Generate style sections (first pass) ---
+            style_sys = (
+                "You are a helpful assistant that generates detailed style descriptions. "
+                "Use <h2> HTML headings for each style section, followed by paragraphs. "
+                "Do not use markdown."
+            )
             generated_style_section = gpt_content(
-                f"You are a helpful assistant that generates detailed style descriptions. "
-                f"Use <h2> HTML headings for each style section, followed by paragraphs. "
-                f"Do not use markdown. Generate exactly {job.version_count} unique hairstyles.",
+                client,
+                style_sys + f" Generate exactly {job.version_count} unique hairstyles.",
                 style_prompt
             )
+
+            # --- Parse robustly + top-up if under-count ---
             style_blocks = extract_styles_from_html(generated_style_section)
+
+            missing = job.version_count - len(style_blocks)
+            if missing > 0:
+                more_blocks = top_up_missing_styles(
+                    client=client,
+                    system_prompt=style_sys,
+                    base_style_prompt=style_prompt,
+                    have_titles=_titles_set(style_blocks),
+                    need_count=missing
+                )
+                style_blocks.extend(more_blocks)
+
+            # Keep all items by uniquifying duplicate titles
+            style_blocks = uniquify_titles(style_blocks)
+
+            # Final clamp: if more than requested, trim;
+            if len(style_blocks) > job.version_count:
+                style_blocks = style_blocks[:job.version_count]
+
+            # --- Image descriptions for each style block ---
             style_image_descriptions = []
             for block in style_blocks:
                 style_name = block["style_name"]
                 image_desc = gpt_content(
+                    client,
                     "You are an editorial stylist creating image descriptions for a fashion AI. "
                     "Write a visual description of the haircut below in 35–60 words. "
                     "Include hair length, texture, shape, sides, top, and camera angle.",
@@ -136,26 +256,37 @@ def _run_generation_job(job_id: int):
                 )
                 style_image_descriptions.append({
                     "style_name": style_name,
-                    "image_style_description": image_desc.strip()
+                    "image_style_description": (image_desc or "").strip()
                 })
+
+            # Dict of name -> description (now safe because names are unique)
             style_dict = {item["style_name"]: item["image_style_description"] for item in style_image_descriptions}
 
+            # Rebuild the section from the parsed/uniquified blocks (consistent, optional)
+            generated_style_section = "\n\n".join(b["html"] for b in style_blocks)
+
+            # Conclusion
             generated_conclusion = gpt_content(
+                client,
                 "You are a helpful assistant that generates article conclusions. Do not use markdown.",
                 conclusion_prompt
             )
+
+            # Meta
             meta_title = ''
             meta_description = ''
             if meta_data_prompt:
-                meta_json = gpt_content("Return JSON with meta_title and meta_description.", meta_data_prompt)
+                meta_json = gpt_content(client, "Return JSON with meta_title and meta_description.", meta_data_prompt)
                 try:
                     meta_data = json.loads(meta_json)
                     meta_title = meta_data.get('meta_title', '')
                     meta_description = meta_data.get('meta_description', '')
                 except Exception:
+                    # If it's not valid JSON, store the raw text in description
                     meta_title = ''
                     meta_description = meta_json
 
+            # Create Post
             post = Post.objects.create(
                 keyword=job.keyword,
                 prompt=pr,
@@ -174,8 +305,7 @@ def _run_generation_job(job_id: int):
                 style_image_descriptions=style_dict
             )
             post.save()
-            # start images in background (as before)
-            threading.Thread(target=generate_post_images_task, args=(post.id,)).start()
+            threading.Thread(target=generate_post_images_task, args=(post.id,), daemon=True).start()
 
         else:
             # master prompt flow (same as your current one)
@@ -196,8 +326,8 @@ def _run_generation_job(job_id: int):
                 "- Do not add any markdown or text outside the JSON object."
                 "- Arrays must contain only flat strings."
             )
-            master_prompt_text = fill_prompt(pr.master_prompt)
-            json_text = gpt_content(system_prompt, master_prompt_text)
+            master_prompt_text = fill_prompt(getattr(pr, 'master_prompt', ''))
+            json_text = gpt_content(_gpt_client(), system_prompt, master_prompt_text)
             structured = json.loads(json_text)
 
             post = Post.objects.create(
@@ -217,7 +347,7 @@ def _run_generation_job(job_id: int):
                 style_images_status='in_process',
             )
             post.save()
-            threading.Thread(target=generate_post_images_task, args=(post.id,)).start()
+            threading.Thread(target=generate_post_images_task, args=(post.id,), daemon=True).start()
 
         # Done
         job.post = post
@@ -230,6 +360,7 @@ def _run_generation_job(job_id: int):
         job.error = str(e)
         job.finished_at = timezone.now()
         job.save(update_fields=['status', 'error', 'finished_at'])
+
 
 # =============================================================================
 # S3/Storage + WordPress Helpers
@@ -246,7 +377,6 @@ def _wp_media_endpoint():
     base = settings.WORDPRESS_API_URL.rsplit('/posts', 1)[0]
     return f"{base}/media"
 
-
 def _wp_headers():
     # IMPORTANT: do NOT set Content-Type for file uploads; requests will set multipart/form-data.
     return {
@@ -255,10 +385,8 @@ def _wp_headers():
         "User-Agent": "Mozilla/5.0",
     }
 
-
 def _guess_ct(filename: str) -> str:
     return mimetypes.guess_type(filename)[0] or "application/octet-stream"
-
 
 def _open_from_storage_or_url(name_or_url: str):
     """
@@ -291,8 +419,6 @@ def _open_from_storage_or_url(name_or_url: str):
     fobj = default_storage.open(storage_key, "rb")
     filename = os.path.basename(storage_key) or "upload.bin"
     return fobj, filename
-
-
 # =============================================================================
 # Admin: ModelInfo
 # =============================================================================
@@ -630,16 +756,48 @@ class KeywordAdmin(admin.ModelAdmin):
 
     def ajax_generate_versions(self, request):
         if request.method != 'POST':
-            return JsonResponse({'success': False, 'message': 'Invalid request.'})
+            return JsonResponse({'success': False, 'message': 'Invalid request method.'}, status=405)
 
-        keyword_id = request.POST.get('keyword_id')
-        prompt_id = request.POST.get('prompt_id')
-        prompt_type = (request.POST.get('prompt_type') or 'individual').strip().lower()
-        version_count = int(request.POST.get('version_count', 1))
+        # ---- Parse body (JSON or form) ----
+        keyword_id = prompt_id = prompt_type = version_count = None
+        data = None
 
+        try:
+            if request.content_type and request.content_type.startswith('application/json'):
+                raw = (request.body or b'').decode('utf-8') or '{}'
+                data = json.loads(raw)
+                keyword_id = data.get('keyword_id')
+                prompt_id = (data.get('prompt_id') or '').strip()
+                prompt_type = (data.get('prompt_type') or 'individual').strip().lower()
+                version_count = int(data.get('version_count') or 1)
+            else:
+                keyword_id = request.POST.get('keyword_id')
+                prompt_id = (request.POST.get('prompt_id') or '').strip()
+                prompt_type = (request.POST.get('prompt_type') or 'individual').strip().lower()
+                version_count = int(request.POST.get('version_count') or 1)
+        except (ValueError, json.JSONDecodeError) as e:
+            return JsonResponse({'success': False, 'message': f'Bad request body: {e}'}, status=400)
+
+        # ---- Validate fields early (avoid 404 for bad inputs) ----
+        if not keyword_id:
+            return JsonResponse({'success': False, 'message': 'Missing keyword_id'}, status=400)
+        try:
+            keyword_id = int(keyword_id)
+        except (TypeError, ValueError):
+            return JsonResponse({'success': False, 'message': 'keyword_id must be an integer'}, status=400)
+
+        if not prompt_id:
+            return JsonResponse({'success': False, 'message': 'Missing prompt_id'}, status=400)
+        if prompt_type not in ('individual', 'master'):
+            return JsonResponse({'success': False, 'message': 'prompt_type must be "individual" or "master"'}, status=400)
+        if version_count < 1:
+            return JsonResponse({'success': False, 'message': 'version_count must be >= 1'}, status=400)
+
+        # ---- Lookups (now a real 404 only if the DB row is missing) ----
         keyword = get_object_or_404(Keyword, pk=keyword_id)
         prompt = get_object_or_404(Prompt, prompt_id=prompt_id)
 
+        # ---- Create job ----
         job = GenerationJob.objects.create(
             keyword=keyword,
             prompt=prompt,
@@ -649,15 +807,14 @@ class KeywordAdmin(admin.ModelAdmin):
             status='queued',
         )
 
-        # start (or reuse) the single worker thread
         _ensure_worker_running()
 
         return JsonResponse({
             'success': True,
             'queued': True,
             'job_id': job.id,
-            'message': f"✅ Thanks! Your request was queued at {timezone.now().strftime('%Y-%m-%d %H:%M:%S')}.",
-        })
+            'message': f"✅ Thanks! Your request was queued at {timezone.now().strftime('%Y-%m-%d %H:%M:%S')}."
+        }, status=200)
 
     def ajax_regenerate_versions(self, request):
         if request.method == 'POST':
@@ -1349,7 +1506,7 @@ class PostAdmin(admin.ModelAdmin):
 
         post_payload = {
             "title": title_content_plain,
-            "content": combined_content,
+            # "content": combined_content,
             "status": "draft",
             "acf": {
                 "ai_title": post.generated_title,
