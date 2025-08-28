@@ -1507,8 +1507,7 @@ class PostAdmin(admin.ModelAdmin):
         post_payload = {
             "title": title_content_plain,
             # "content": combined_content,
-            "status": "draft",
-            # "template": "single-custom-template.php",   
+            "status": "draft",  
             "acf": {
                 "ai_title": post.generated_title,
                 "ai_intro": post.generated_intro,
