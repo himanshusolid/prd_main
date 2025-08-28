@@ -1508,6 +1508,7 @@ class PostAdmin(admin.ModelAdmin):
             "title": title_content_plain,
             # "content": combined_content,
             "status": "draft",
+            # "template": "single-custom-template.php",   
             "acf": {
                 "ai_title": post.generated_title,
                 "ai_intro": post.generated_intro,
@@ -1515,7 +1516,12 @@ class PostAdmin(admin.ModelAdmin):
                 "ai_conclusion": post.generated_conclusion,
                 "style_images": gallery_media_ids
             },
+            "meta": {
+                    "rank_math_title":  post.meta_title,
+                    "rank_math_description": post.meta_description
+                },
             "featured_media": image_id if image_id else None
+
         }
 
         try:
