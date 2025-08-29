@@ -1509,6 +1509,7 @@ class PostAdmin(admin.ModelAdmin):
             # "content": combined_content,
             "status": "draft",  
             "acf": {
+                "field_66bb21792e74b": "single-custom-template",
                 "ai_title": post.generated_title,
                 "ai_intro": post.generated_intro,
                 "ai_style": post.generated_style_section,
