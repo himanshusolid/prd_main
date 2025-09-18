@@ -1463,16 +1463,24 @@ class PostAdmin(admin.ModelAdmin):
 
         # === STEP 2: Upload Gallery Style Images (keys, MEDIA URLs, or http URLs) ===
         style_images_data = post.style_images or {}   # {style_name: key_or_url}
-        gallery_media_ids = []
         threads = []
+        gallery_media_ids = []
+        silent = False  # or pass in
 
         def upload_image_thread(style_name, key_or_url, collected_ids):
             try:
                 fobj, filename = _open_from_storage_or_url(key_or_url)
                 try:
                     content_type = _guess_ct(filename) or "image/jpeg"
-                    files = {"file": (filename, fobj, content_type)}
-                    rr = requests.post(_wp_media_endpoint(), headers=_wp_headers(), files=files, timeout=120)
+                    files = {"file": (os.path.basename(filename), fobj, content_type)}
+
+                    media_headers = {
+                        "Authorization": f"Bearer {settings.WORDPRESS_JWT_TOKEN}",
+                        "User-Agent": "Mozilla/5.0",
+                        "Accept": "application/json",
+                    }  # no Content-Type here
+
+                    rr = requests.post(_wp_media_endpoint(), headers=media_headers, files=files, timeout=120)
                 finally:
                     try:
                         fobj.close()
@@ -1480,9 +1488,14 @@ class PostAdmin(admin.ModelAdmin):
                         pass
 
                 if rr.status_code == 201:
-                    collected_ids.append(rr.json().get('id'))
+                    collected_ids.append(rr.json().get("id"))
                 elif not silent:
-                    print(f"[Gallery] Failed to upload {style_name}: {rr.status_code} {rr.text}")
+                    msg = rr.text
+                    try:
+                        msg = rr.json()
+                    except Exception:
+                        pass
+                    print(f"[Gallery] Failed to upload {style_name}: {rr.status_code} {msg}")
             except Exception as e:
                 if not silent:
                     print(f"[Gallery] Error uploading {style_name}: {e}")
@@ -1496,7 +1509,6 @@ class PostAdmin(admin.ModelAdmin):
         for t in threads:
             t.join()
 
-        # === STEP 3: Create Post ===
         post_headers = {
             "Authorization": f"Bearer {settings.WORDPRESS_JWT_TOKEN}",
             "Content-Type": "application/json",
@@ -1506,35 +1518,33 @@ class PostAdmin(admin.ModelAdmin):
 
         post_payload = {
             "title": title_content_plain,
-            # "content": combined_content,
-            "status": "draft",  
+            "status": "draft",
             "acf": {
                 "field_66bb21792e74b": "single-custom-template",
                 "ai_title": post.generated_title,
                 "ai_intro": post.generated_intro,
                 "ai_style": post.generated_style_section,
                 "ai_conclusion": post.generated_conclusion,
-                "style_images": gallery_media_ids
+                "style_images": gallery_media_ids,
             },
             "meta": {
-                    "rank_math_title":  post.meta_title,
-                    "rank_math_description": post.meta_description
-                },
-            "featured_media": image_id if image_id else None
-
+                "rank_math_title": post.meta_title,
+                "rank_math_description": post.meta_description,
+            },
         }
+        if image_id:
+            post_payload["featured_media"] = image_id
 
         try:
             resp = requests.post(wordpress_api_url, headers=post_headers, json=post_payload, timeout=120)
             if resp.status_code == 201:
-                # Keep your own status logic as needed:
-                # e.g., post.status = 'pushed' or 'draft' or leave unchanged
-                post.status = 'publish'  # kept to match your previous behavior
+                post.status = 'draft'  # or 'publish' to mirror WP; keep these in sync
                 post.save()
                 if not silent:
                     self.message_user(request, "Post pushed to WordPress!", level=messages.SUCCESS)
-                return True
+                ok = True
             else:
+                ok = False
                 if not silent:
                     try:
                         error_message = resp.json().get('message', resp.text)
@@ -1542,10 +1552,11 @@ class PostAdmin(admin.ModelAdmin):
                         error_message = resp.text
                     self.message_user(request, f"Failed to push post: {error_message}", level=messages.ERROR)
         except requests.exceptions.RequestException as e:
+            ok = False
             if not silent:
                 self.message_user(request, f"Network/WordPress API Error: {e}", level=messages.ERROR)
 
-        return False
+        return ok
 
     # ---------------------------
     # Icons
