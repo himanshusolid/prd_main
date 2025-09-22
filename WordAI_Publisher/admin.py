@@ -187,7 +187,10 @@ def _run_generation_job(job_id: int):
                 return (tmpl
                         .replace('{{keyword}}', job.keyword.keyword or '')
                         .replace('{{hairstyle_name}}', job.keyword.keyword or '')
-                        .replace('{{version_count}}', str(job.version_count)))
+                        .replace('{{version_count}}', str(job.version_count))
+                        .replace('{{template_type}}', str(getattr(job, 'template_type', '') or ''))
+                        .replace('{{season}}',        str(getattr(job, 'season', '') or ''))
+                        .replace('{{year}}',          str(getattr(job, 'year', '') or '')))
             return ''
 
         pr = job.prompt
@@ -639,7 +642,15 @@ class KeywordAdmin(admin.ModelAdmin):
     def ajax_bulk_generate(self, request):
         """
         Enqueue bulk generation jobs instead of running them inline.
-        Expects JSON: { "keyword_ids":[...], "prompt_id":"...", "prompt_type":"individual|master", "version_count":N }
+        Expects JSON: { 
+            "keyword_ids":[...], 
+            "prompt_id":"...", 
+            "prompt_type":"individual|master", 
+            "version_count":N,
+            "template_type":"regular|modular",
+            "season":"spring|summer|fall|winter",
+            "year":YYYY
+        }
         Returns an immediate thank-you message with current time and job ids.
         """
         if request.method != 'POST':
@@ -655,13 +666,30 @@ class KeywordAdmin(admin.ModelAdmin):
         prompt_id = (payload.get('prompt_id') or request.POST.get('prompt_id') or '').strip()
         prompt_type = (payload.get('prompt_type') or request.POST.get('prompt_type') or 'individual').strip().lower()
         version_count = int(payload.get('version_count') or request.POST.get('version_count') or 1)
+        template_type = (payload.get('template_type') or request.POST.get('template_type') or 'regular').strip().lower()
+        season = (payload.get('season') or request.POST.get('season') or '').strip().lower() or None
+        year = payload.get('year') or request.POST.get('year')
 
+        # ---- Validation ----
         if not keyword_ids:
             return JsonResponse({'success': False, 'message': 'Missing keyword_ids'}, status=400)
         if not prompt_id:
             return JsonResponse({'success': False, 'message': 'Missing prompt_id'}, status=400)
         if prompt_type not in ('individual', 'master'):
-            return JsonResponse({'success': False, 'message': 'prompt_type must be "individual" or "master"'}, status=400)
+            return JsonResponse({'success': False, 'message': 'prompt_type must be \"individual\" or \"master\"'}, status=400)
+        if template_type not in ('regular', 'modular'):
+            return JsonResponse({'success': False, 'message': 'template_type must be \"regular\" or \"modular\"'}, status=400)
+        if version_count < 1:
+            return JsonResponse({'success': False, 'message': 'version_count must be >= 1'}, status=400)
+
+        if template_type == 'modular':
+            if not season:
+                return JsonResponse({'success': False, 'message': 'season is required for modular template'}, status=400)
+            if year:
+                try:
+                    year = int(year)
+                except (TypeError, ValueError):
+                    return JsonResponse({'success': False, 'message': 'year must be an integer'}, status=400)
 
         # Resolve prompt
         pr = Prompt.objects.filter(prompt_id=prompt_id).first()
@@ -682,6 +710,9 @@ class KeywordAdmin(admin.ModelAdmin):
                 prompt=pr,
                 prompt_type=prompt_type,
                 version_count=version_count,
+                template_type=template_type,
+                season=season,
+                year=year,
                 created_by=request.user if getattr(request, "user", None) and request.user.is_authenticated else None,
                 status='queued',
             )
@@ -697,7 +728,6 @@ class KeywordAdmin(admin.ModelAdmin):
             'errors': errors,
             'message': f"✅ Thanks! {len(created_jobs)} request(s) queued at {timezone.now().strftime('%Y-%m-%d %H:%M:%S')} and will run one by one."
         }, status=200)
-
 
     def save_style_prompt(self, request):
         """Save a style prompt (JSON body)."""
@@ -760,6 +790,7 @@ class KeywordAdmin(admin.ModelAdmin):
 
         # ---- Parse body (JSON or form) ----
         keyword_id = prompt_id = prompt_type = version_count = None
+        template_type = season = year = None
         data = None
 
         try:
@@ -770,15 +801,21 @@ class KeywordAdmin(admin.ModelAdmin):
                 prompt_id = (data.get('prompt_id') or '').strip()
                 prompt_type = (data.get('prompt_type') or 'individual').strip().lower()
                 version_count = int(data.get('version_count') or 1)
+                template_type = (data.get('template_type') or 'regular').strip().lower()
+                season = (data.get('season') or '').strip().lower() or None
+                year = data.get('year')
             else:
                 keyword_id = request.POST.get('keyword_id')
                 prompt_id = (request.POST.get('prompt_id') or '').strip()
                 prompt_type = (request.POST.get('prompt_type') or 'individual').strip().lower()
                 version_count = int(request.POST.get('version_count') or 1)
+                template_type = (request.POST.get('template_type') or 'regular').strip().lower()
+                season = (request.POST.get('season') or '').strip().lower() or None
+                year = request.POST.get('year')
         except (ValueError, json.JSONDecodeError) as e:
             return JsonResponse({'success': False, 'message': f'Bad request body: {e}'}, status=400)
 
-        # ---- Validate fields early (avoid 404 for bad inputs) ----
+        # ---- Validate fields early ----
         if not keyword_id:
             return JsonResponse({'success': False, 'message': 'Missing keyword_id'}, status=400)
         try:
@@ -789,11 +826,22 @@ class KeywordAdmin(admin.ModelAdmin):
         if not prompt_id:
             return JsonResponse({'success': False, 'message': 'Missing prompt_id'}, status=400)
         if prompt_type not in ('individual', 'master'):
-            return JsonResponse({'success': False, 'message': 'prompt_type must be "individual" or "master"'}, status=400)
+            return JsonResponse({'success': False, 'message': 'prompt_type must be \"individual\" or \"master\"'}, status=400)
         if version_count < 1:
             return JsonResponse({'success': False, 'message': 'version_count must be >= 1'}, status=400)
+        if template_type not in ('regular', 'modular'):
+            return JsonResponse({'success': False, 'message': 'template_type must be \"regular\" or \"modular\"'}, status=400)
 
-        # ---- Lookups (now a real 404 only if the DB row is missing) ----
+        if template_type == 'modular':
+            if not season:
+                return JsonResponse({'success': False, 'message': 'season is required for modular template'}, status=400)
+            if year:
+                try:
+                    year = int(year)
+                except (TypeError, ValueError):
+                    return JsonResponse({'success': False, 'message': 'year must be an integer'}, status=400)
+
+        # ---- Lookups ----
         keyword = get_object_or_404(Keyword, pk=keyword_id)
         prompt = get_object_or_404(Prompt, prompt_id=prompt_id)
 
@@ -803,6 +851,9 @@ class KeywordAdmin(admin.ModelAdmin):
             prompt=prompt,
             prompt_type=prompt_type,
             version_count=version_count,
+            template_type=template_type,
+            season=season,
+            year=year,
             created_by=request.user if request.user.is_authenticated else None,
             status='queued',
         )
@@ -821,7 +872,7 @@ class KeywordAdmin(admin.ModelAdmin):
             data = json.loads(request.body.decode())
             post_id = data.get('post_id')
             content_type = data.get('content_type')
-
+            job = GenerationJob.objects.select_related('keyword', 'prompt').get(post_id=post_id)
             post = get_object_or_404(Post, pk=post_id)
             keyword = post.keyword
             prompt = post.prompt
@@ -834,7 +885,11 @@ class KeywordAdmin(admin.ModelAdmin):
                     return (tmpl
                             .replace('{{keyword}}', keyword.keyword)
                             .replace('{{hairstyle_name}}', keyword.keyword)
-                            .replace('{{version_count}}', str(version_count)))
+                            .replace('{{version_count}}', str(version_count))
+                            .replace('{{template_type}}', str(getattr(job, 'template_type', '') or ''))
+                            .replace('{{season}}',        str(getattr(job, 'season', '') or ''))
+                            .replace('{{year}}',          str(getattr(job, 'year', '') or '')))
+ 
                 return ''
 
             def extract_styles_from_html(html):

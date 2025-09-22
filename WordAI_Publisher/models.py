@@ -152,10 +152,23 @@ class GenerationJob(models.Model):
         ('done', 'done'),
         ('failed', 'failed'),
     )
+    TEMPLATE_TYPES = (
+        ('regular', 'regular'),
+        ('modular', 'modular'),
+    )
+    SEASONS = (
+        ('spring', 'Spring'),
+        ('summer', 'Summer'),
+        ('fall', 'Fall'),
+        ('winter', 'Winter'),
+    )
 
     keyword = models.ForeignKey('Keyword', on_delete=models.CASCADE, null=True, blank=True)
     prompt = models.ForeignKey('Prompt', on_delete=models.SET_NULL, null=True, blank=True)
     prompt_type = models.CharField(max_length=20, choices=PROMPT_TYPES, default='individual')
+    template_type = models.CharField(max_length=20, choices=TEMPLATE_TYPES, default='regular')
+    season = models.CharField(max_length=20, choices=SEASONS, null=True, blank=True)
+    year = models.CharField(max_length=4, null=True, blank=True)
     version_count = models.PositiveIntegerField(default=1)
 
     # bookkeeping
@@ -172,11 +185,17 @@ class GenerationJob(models.Model):
     post = models.ForeignKey('Post', null=True, blank=True, on_delete=models.SET_NULL)
 
     def __str__(self):
-        return f"Job#{self.pk} {self.keyword and self.keyword.keyword} [{self.prompt_type}] {self.status}"
-    
+        return (
+            f"Job#{self.pk} {self.keyword and self.keyword.keyword} "
+            f"[{self.prompt_type}/{self.template_type}] "
+            f"{self.season and self.season.capitalize()} {self.year or ''} "
+            f"{self.status}"
+        )
+
     class Meta:
         managed = False
         db_table = 'wordai_publisher_generationjob'
+
 
 
 

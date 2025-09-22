@@ -54,6 +54,7 @@
     <h3>Generate Post</h3>
     <form id="generateContentForm">
       <input type="hidden" id="single-keyword-id" name="keyword_id" />
+
       <label for="prompt_id">Select Prompt:</label>
       <select name="prompt_id" id="prompt_id">
         <option value="">Select…</option>
@@ -64,11 +65,35 @@
 
       <label for="prompt_type">Select Prompt type:</label>
       <select name="prompt_type" id="prompt_type">
-        <option value="individual">individual Prompt</option>
+        <option value="individual">Individual Prompt</option>
         <option value="master">Master Prompt</option>
       </select>
 
-      <label for="modal-version-count">Number of style Revisions:</label>
+      <!-- NEW: Template chooser -->
+      <label for="template_type">Choose Template:</label>
+      <select name="template_type" id="template_type">
+        <option value="regular" selected>Regular</option>
+        <option value="modular">Modular</option>
+      </select>
+
+      <!-- NEW: Session + Year (only visible for Modular) -->
+      <div id="sessionYearGroup" style="display:none; margin-top: 8px;">
+        <label for="session">Session:</label>
+        <select name="season" id="session">
+          <option value="">Select session…</option>
+          <option value="Spring">Spring</option>
+          <option value="Summer">Summer</option>
+          <option value="Fall">Fall</option>
+          <option value="Winter">Winter</option>
+        </select>
+
+        <label for="year">Year:</label>
+        <select name="year" id="year">
+          <!-- Populated by JS -->
+        </select>
+      </div>
+
+      <label for="modal-version-count">Number of Style Revisions:</label>
       <input type="number" id="modal-version-count" name="version_count" min="1" value="10" required />
 
       <div class="modal-actions">
@@ -78,6 +103,37 @@
     </form>
   </div>
 </div>
+
+<script>
+  (function () {
+    const templateSelect = document.getElementById('template_type');
+    const group = document.getElementById('sessionYearGroup');
+    const session = document.getElementById('session');
+    const year = document.getElementById('year');
+
+    // Populate year options: current year ± 2
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const years = [];
+    for (let y = currentYear - 2; y <= currentYear + 2; y++) years.push(y);
+    year.innerHTML = '<option value="">Select year…</option>' + years.map(y =>
+      `<option value="${y}" ${y === currentYear ? 'selected' : ''}>${y}</option>`
+    ).join('');
+
+    function toggleSessionYear() {
+      const isModular = templateSelect.value === 'modular';
+      group.style.display = isModular ? 'block' : 'none';
+
+      // Make fields required only when visible
+      session.required = isModular;
+      year.required = isModular;
+    }
+
+    templateSelect.addEventListener('change', toggleSessionYear);
+    // Initialize on load
+    toggleSessionYear();
+  })();
+</script>
 
 <!-- ========== BULK GENERATE MODAL ========== -->
 <div id="bulkGenerateModal">
@@ -94,11 +150,33 @@
 
       <label for="bulk_prompt_type">Select Prompt type:</label>
       <select name="prompt_type" id="bulk_prompt_type">
-        <option value="individual">individual Prompt</option>
+        <option value="individual">Individual Prompt</option>
         <option value="master">Master Prompt</option>
       </select>
 
-      <label for="bulk-version-count">Number of style Revisions:</label>
+      <!-- NEW: Template chooser -->
+      <label for="bulk_template_type">Choose Template:</label>
+      <select name="template_type" id="bulk_template_type">
+        <option value="regular" selected>Regular</option>
+        <option value="modular">Modular</option>
+      </select>
+
+      <!-- NEW: Season + Year (only visible for Modular) -->
+      <div id="bulkSessionYearGroup" style="display:none; margin-top: 8px;">
+        <label for="bulk_session">Season:</label>
+        <select name="season" id="bulk_session">
+          <option value="">Select season…</option>
+          <option value="Spring">Spring</option>
+          <option value="Summer">Summer</option>
+          <option value="Fall">Fall</option>
+          <option value="Winter">Winter</option>
+        </select>
+
+        <label for="bulk_year">Year:</label>
+        <select name="year" id="bulk_year"></select>
+      </div>
+
+      <label for="bulk-version-count">Number of Style Revisions:</label>
       <input type="number" id="bulk-version-count" name="version_count" min="1" value="10" required />
 
       <div class="modal-actions">
@@ -108,6 +186,34 @@
     </form>
   </div>
 </div>
+
+<script>
+  (function () {
+    const templateSelect = document.getElementById('bulk_template_type');
+    const group = document.getElementById('bulkSessionYearGroup');
+    const season = document.getElementById('bulk_session');
+    const year = document.getElementById('bulk_year');
+
+    // Populate year options: current year ± 2
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const years = [];
+    for (let y = currentYear - 2; y <= currentYear + 2; y++) years.push(y);
+    year.innerHTML = '<option value="">Select year…</option>' + years.map(y =>
+      `<option value="${y}" ${y === currentYear ? 'selected' : ''}>${y}</option>`
+    ).join('');
+
+    function toggleSessionYear() {
+      const isModular = templateSelect.value === 'modular';
+      group.style.display = isModular ? 'block' : 'none';
+      season.required = isModular;
+      year.required = isModular;
+    }
+
+    templateSelect.addEventListener('change', toggleSessionYear);
+    toggleSessionYear(); // Initialize on load
+  })();
+</script>
 
 <!-- ========== UNIFIED 5s LOADER + THANK-YOU OVERLAY ========== -->
 <div id="wpaiEnqueueOverlay" class="wpai-modal-overlay">
@@ -216,21 +322,39 @@
   }
 
   bulkForm.addEventListener('submit', function(e){
-    e.preventDefault();
-    const ids = selectedKeywordIds();
-    if (!ids.length) { alert('Please select at least one keyword.'); return; }
+  e.preventDefault();
+  const ids = selectedKeywordIds();
+  if (!ids.length) { alert('Please select at least one keyword.'); return; }
 
-    const payload = {
-      keyword_ids: ids,
-      prompt_id: document.getElementById('bulk_prompt_id').value,
-      prompt_type: document.getElementById('bulk_prompt_type').value,
-      version_count: parseInt(document.getElementById('bulk-version-count').value || '1', 10)
-    };
-    closeBulk(); // close input modal
-    withFiveSecondLoader(() =>
-      postJSON("{% url 'admin:ajax_bulk_generate' %}", payload)
-    );
-  });
+  const templateType = document.getElementById('bulk_template_type').value;
+  const seasonEl = document.getElementById('bulk_session');
+  const yearEl   = document.getElementById('bulk_year');
+
+  // If Modular is chosen, enforce Season + Year
+  if (templateType === 'modular') {
+    if (!seasonEl.value || !yearEl.value) {
+      alert('Please choose a season and year for Modular.');
+      return;
+    }
+  }
+
+  const payload = {
+    keyword_ids: ids,
+    prompt_id: document.getElementById('bulk_prompt_id').value,
+    prompt_type: document.getElementById('bulk_prompt_type').value,
+    version_count: parseInt(document.getElementById('bulk-version-count').value || '1', 10),
+
+    // NEW:
+    template_type: templateType,
+    season: templateType === 'modular' ? seasonEl.value : '',
+    year:   templateType === 'modular' ? parseInt(yearEl.value, 10) : ''
+  };
+
+  closeBulk();
+  withFiveSecondLoader(() =>
+    postJSON("{% url 'admin:ajax_bulk_generate' %}", payload)
+  );
+});
 
   /* ---------- Single flow wiring ---------- */
   const singleModal  = document.getElementById('generateContentModal');
@@ -260,21 +384,39 @@
   });
 
   singleForm.addEventListener('submit', function(e){
-    e.preventDefault();
-    const kid = singleIdHid.value;
-    if (!kid) { alert('Missing keyword id'); return; }
+  e.preventDefault();
+  const kid = singleIdHid.value;
+  if (!kid) { alert('Missing keyword id'); return; }
 
-    const payload = {
-      keyword_id: kid,
-      prompt_id: document.getElementById('prompt_id').value,
-      prompt_type: document.getElementById('prompt_type').value,
-      version_count: parseInt(document.getElementById('modal-version-count').value || '1', 10)
-    };
-    closeSingle(); // close input modal
-    withFiveSecondLoader(() =>
-      postJSON("{% url 'admin:ajax_generate_versions' %}", payload)
-    );
-  });
+  const templateType = document.getElementById('template_type').value;
+  const seasonEl = document.getElementById('session'); // id="session", name="season"
+  const yearEl   = document.getElementById('year');
+
+  if (templateType === 'modular') {
+    if (!seasonEl.value || !yearEl.value) {
+      alert('Please choose a season and year for Modular.');
+      return;
+    }
+  }
+
+  const payload = {
+    keyword_id: kid,
+    prompt_id: document.getElementById('prompt_id').value,
+    prompt_type: document.getElementById('prompt_type').value,
+    version_count: parseInt(document.getElementById('modal-version-count').value || '1', 10),
+
+    // NEW:
+    template_type: templateType,
+    season: templateType === 'modular' ? seasonEl.value : '',
+    year:   templateType === 'modular' ? parseInt(yearEl.value, 10) : ''
+  };
+
+  closeSingle();
+  withFiveSecondLoader(() =>
+    postJSON("{% url 'admin:ajax_generate_versions' %}", payload)
+  );
+ });
+
 })();
 </script>
 {% endblock %}
