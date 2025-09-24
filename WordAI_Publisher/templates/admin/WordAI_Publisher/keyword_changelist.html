@@ -69,32 +69,18 @@
         <option value="master">Master Prompt</option>
       </select>
 
-      <!-- NEW: Template chooser -->
+      <!-- Template chooser -->
       <label for="template_type">Choose Template:</label>
       <select name="template_type" id="template_type">
-        <option value="regular" selected>Regular</option>
+        <option value="regular" selected>HairStyles</option>
         <option value="modular">Modular</option>
       </select>
 
-      <!-- NEW: Session + Year (only visible for Modular) -->
-      <div id="sessionYearGroup" style="display:none; margin-top: 8px;">
-        <label for="session">Session:</label>
-        <select name="season" id="session">
-          <option value="">Select session…</option>
-          <option value="Spring">Spring</option>
-          <option value="Summer">Summer</option>
-          <option value="Fall">Fall</option>
-          <option value="Winter">Winter</option>
-        </select>
-
-        <label for="year">Year:</label>
-        <select name="year" id="year">
-          <!-- Populated by JS -->
-        </select>
+      <!-- Version (hidden when template = modular) -->
+      <label for="modal-version-count" id="singleVersionLabel">Number of Style Revisions:</label>
+      <div id="singleVersionWrap">
+        <input type="number" id="modal-version-count" name="version_count" min="1" value="10" />
       </div>
-
-      <label for="modal-version-count">Number of Style Revisions:</label>
-      <input type="number" id="modal-version-count" name="version_count" min="1" value="10" required />
 
       <div class="modal-actions">
         <button type="button" id="gen-cancel-btn">Cancel</button>
@@ -104,34 +90,22 @@
   </div>
 </div>
 
+<!-- Hide/show version when template changes (SINGLE) -->
 <script>
   (function () {
     const templateSelect = document.getElementById('template_type');
-    const group = document.getElementById('sessionYearGroup');
-    const session = document.getElementById('session');
-    const year = document.getElementById('year');
+    const versionWrap = document.getElementById('singleVersionWrap');
+    const versionLabel = document.getElementById('singleVersionLabel');
+    const versionInput = document.getElementById('modal-version-count');
 
-    // Populate year options: current year ± 2
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const years = [];
-    for (let y = currentYear - 2; y <= currentYear + 2; y++) years.push(y);
-    year.innerHTML = '<option value="">Select year…</option>' + years.map(y =>
-      `<option value="${y}" ${y === currentYear ? 'selected' : ''}>${y}</option>`
-    ).join('');
-
-    function toggleSessionYear() {
+    function toggleVersionVis() {
       const isModular = templateSelect.value === 'modular';
-      group.style.display = isModular ? 'block' : 'none';
-
-      // Make fields required only when visible
-      session.required = isModular;
-      year.required = isModular;
+      versionWrap.style.display = isModular ? 'none' : 'block';
+      versionLabel.style.display = isModular ? 'none' : 'block';
+      versionInput.disabled = isModular;
     }
-
-    templateSelect.addEventListener('change', toggleSessionYear);
-    // Initialize on load
-    toggleSessionYear();
+    templateSelect.addEventListener('change', toggleVersionVis);
+    toggleVersionVis(); // init on load
   })();
 </script>
 
@@ -154,30 +128,18 @@
         <option value="master">Master Prompt</option>
       </select>
 
-      <!-- NEW: Template chooser -->
+      <!-- Template chooser -->
       <label for="bulk_template_type">Choose Template:</label>
       <select name="template_type" id="bulk_template_type">
-        <option value="regular" selected>Regular</option>
+        <option value="regular" selected>HairStyles</option>
         <option value="modular">Modular</option>
       </select>
 
-      <!-- NEW: Season + Year (only visible for Modular) -->
-      <div id="bulkSessionYearGroup" style="display:none; margin-top: 8px;">
-        <label for="bulk_session">Season:</label>
-        <select name="season" id="bulk_session">
-          <option value="">Select season…</option>
-          <option value="Spring">Spring</option>
-          <option value="Summer">Summer</option>
-          <option value="Fall">Fall</option>
-          <option value="Winter">Winter</option>
-        </select>
-
-        <label for="bulk_year">Year:</label>
-        <select name="year" id="bulk_year"></select>
+      <!-- Version (hidden when template = modular) -->
+      <label for="bulk-version-count" id="bulkVersionLabel">Number of Style Revisions:</label>
+      <div id="bulkVersionWrap">
+        <input type="number" id="bulk-version-count" name="version_count" min="1" value="10" />
       </div>
-
-      <label for="bulk-version-count">Number of Style Revisions:</label>
-      <input type="number" id="bulk-version-count" name="version_count" min="1" value="10" required />
 
       <div class="modal-actions">
         <button type="button" id="bulk-cancel">Cancel</button>
@@ -187,31 +149,22 @@
   </div>
 </div>
 
+<!-- Hide/show version when template changes (BULK) -->
 <script>
   (function () {
     const templateSelect = document.getElementById('bulk_template_type');
-    const group = document.getElementById('bulkSessionYearGroup');
-    const season = document.getElementById('bulk_session');
-    const year = document.getElementById('bulk_year');
+    const versionWrap = document.getElementById('bulkVersionWrap');
+    const versionLabel = document.getElementById('bulkVersionLabel');
+    const versionInput = document.getElementById('bulk-version-count');
 
-    // Populate year options: current year ± 2
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const years = [];
-    for (let y = currentYear - 2; y <= currentYear + 2; y++) years.push(y);
-    year.innerHTML = '<option value="">Select year…</option>' + years.map(y =>
-      `<option value="${y}" ${y === currentYear ? 'selected' : ''}>${y}</option>`
-    ).join('');
-
-    function toggleSessionYear() {
+    function toggleVersionVis() {
       const isModular = templateSelect.value === 'modular';
-      group.style.display = isModular ? 'block' : 'none';
-      season.required = isModular;
-      year.required = isModular;
+      versionWrap.style.display = isModular ? 'none' : 'block';
+      versionLabel.style.display = isModular ? 'none' : 'block';
+      versionInput.disabled = isModular;
     }
-
-    templateSelect.addEventListener('change', toggleSessionYear);
-    toggleSessionYear(); // Initialize on load
+    templateSelect.addEventListener('change', toggleVersionVis);
+    toggleVersionVis(); // init on load
   })();
 </script>
 
@@ -322,39 +275,29 @@
   }
 
   bulkForm.addEventListener('submit', function(e){
-  e.preventDefault();
-  const ids = selectedKeywordIds();
-  if (!ids.length) { alert('Please select at least one keyword.'); return; }
+    e.preventDefault();
+    const ids = selectedKeywordIds();
+    if (!ids.length) { alert('Please select at least one keyword.'); return; }
 
-  const templateType = document.getElementById('bulk_template_type').value;
-  const seasonEl = document.getElementById('bulk_session');
-  const yearEl   = document.getElementById('bulk_year');
+    const templateType = document.getElementById('bulk_template_type').value;
 
-  // If Modular is chosen, enforce Season + Year
-  if (templateType === 'modular') {
-    if (!seasonEl.value || !yearEl.value) {
-      alert('Please choose a season and year for Modular.');
-      return;
+    const payload = {
+      keyword_ids: ids,
+      prompt_id: document.getElementById('bulk_prompt_id').value,
+      prompt_type: document.getElementById('bulk_prompt_type').value,
+      template_type: templateType,
+    };
+
+    // Only include version_count when NOT modular
+    if (templateType !== 'modular') {
+      payload.version_count = parseInt(document.getElementById('bulk-version-count').value || '1', 10);
     }
-  }
 
-  const payload = {
-    keyword_ids: ids,
-    prompt_id: document.getElementById('bulk_prompt_id').value,
-    prompt_type: document.getElementById('bulk_prompt_type').value,
-    version_count: parseInt(document.getElementById('bulk-version-count').value || '1', 10),
-
-    // NEW:
-    template_type: templateType,
-    season: templateType === 'modular' ? seasonEl.value : '',
-    year:   templateType === 'modular' ? parseInt(yearEl.value, 10) : ''
-  };
-
-  closeBulk();
-  withFiveSecondLoader(() =>
-    postJSON("{% url 'admin:ajax_bulk_generate' %}", payload)
-  );
-});
+    closeBulk();
+    withFiveSecondLoader(() =>
+      postJSON("{% url 'admin:ajax_bulk_generate' %}", payload)
+    );
+  });
 
   /* ---------- Single flow wiring ---------- */
   const singleModal  = document.getElementById('generateContentModal');
@@ -384,38 +327,29 @@
   });
 
   singleForm.addEventListener('submit', function(e){
-  e.preventDefault();
-  const kid = singleIdHid.value;
-  if (!kid) { alert('Missing keyword id'); return; }
+    e.preventDefault();
+    const kid = singleIdHid.value;
+    if (!kid) { alert('Missing keyword id'); return; }
 
-  const templateType = document.getElementById('template_type').value;
-  const seasonEl = document.getElementById('session'); // id="session", name="season"
-  const yearEl   = document.getElementById('year');
+    const templateType = document.getElementById('template_type').value;
 
-  if (templateType === 'modular') {
-    if (!seasonEl.value || !yearEl.value) {
-      alert('Please choose a season and year for Modular.');
-      return;
+    const payload = {
+      keyword_id: kid,
+      prompt_id: document.getElementById('prompt_id').value,
+      prompt_type: document.getElementById('prompt_type').value,
+      template_type: templateType,
+    };
+
+    // Only include version_count when NOT modular
+    if (templateType !== 'modular') {
+      payload.version_count = parseInt(document.getElementById('modal-version-count').value || '1', 10);
     }
-  }
 
-  const payload = {
-    keyword_id: kid,
-    prompt_id: document.getElementById('prompt_id').value,
-    prompt_type: document.getElementById('prompt_type').value,
-    version_count: parseInt(document.getElementById('modal-version-count').value || '1', 10),
-
-    // NEW:
-    template_type: templateType,
-    season: templateType === 'modular' ? seasonEl.value : '',
-    year:   templateType === 'modular' ? parseInt(yearEl.value, 10) : ''
-  };
-
-  closeSingle();
-  withFiveSecondLoader(() =>
-    postJSON("{% url 'admin:ajax_generate_versions' %}", payload)
-  );
- });
+    closeSingle();
+    withFiveSecondLoader(() =>
+      postJSON("{% url 'admin:ajax_generate_versions' %}", payload)
+    );
+  });
 
 })();
 </script>

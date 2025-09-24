@@ -499,7 +499,10 @@ class PromptAdmin(admin.ModelAdmin):
         ('Prompts', {
             'fields': (
                 'master_prompt', 'title_prompt', 'intro_prompt', 'style_prompt',
-                'conclusion_prompt', 'meta_data_prompt', 'featured_image_prompt', 'image_prompt'
+                'quick_style_snapshot_prompt', 'core_packing_guide_prompt','packing_essentials_checklist_prompt',
+                'style_tips_for_blending_prompt', 'destination_specific_extras_prompt',
+                'conclusion_prompt', 'meta_data_prompt',
+                'featured_image_prompt', 'image_prompt'
             ),
             'classes': ('wide',)
         }),
@@ -509,6 +512,7 @@ class PromptAdmin(admin.ModelAdmin):
         }),
     )
     readonly_fields = ('created_at',)
+
 
     def get_urls(self):
         urls = super().get_urls()
@@ -682,14 +686,14 @@ class KeywordAdmin(admin.ModelAdmin):
         if version_count < 1:
             return JsonResponse({'success': False, 'message': 'version_count must be >= 1'}, status=400)
 
-        if template_type == 'modular':
-            if not season:
-                return JsonResponse({'success': False, 'message': 'season is required for modular template'}, status=400)
-            if year:
-                try:
-                    year = int(year)
-                except (TypeError, ValueError):
-                    return JsonResponse({'success': False, 'message': 'year must be an integer'}, status=400)
+        # if template_type == 'modular':
+        #     if not season:
+        #         return JsonResponse({'success': False, 'message': 'season is required for modular template'}, status=400)
+        #     if year:
+        #         try:
+        #             year = int(year)
+        #         except (TypeError, ValueError):
+        #             return JsonResponse({'success': False, 'message': 'year must be an integer'}, status=400)
 
         # Resolve prompt
         pr = Prompt.objects.filter(prompt_id=prompt_id).first()
@@ -832,14 +836,14 @@ class KeywordAdmin(admin.ModelAdmin):
         if template_type not in ('regular', 'modular'):
             return JsonResponse({'success': False, 'message': 'template_type must be \"regular\" or \"modular\"'}, status=400)
 
-        if template_type == 'modular':
-            if not season:
-                return JsonResponse({'success': False, 'message': 'season is required for modular template'}, status=400)
-            if year:
-                try:
-                    year = int(year)
-                except (TypeError, ValueError):
-                    return JsonResponse({'success': False, 'message': 'year must be an integer'}, status=400)
+        # if template_type == 'modular':
+        #     if not season:
+        #         return JsonResponse({'success': False, 'message': 'season is required for modular template'}, status=400)
+        #     if year:
+        #         try:
+        #             year = int(year)
+        #         except (TypeError, ValueError):
+        #             return JsonResponse({'success': False, 'message': 'year must be an integer'}, status=400)
 
         # ---- Lookups ----
         keyword = get_object_or_404(Keyword, pk=keyword_id)

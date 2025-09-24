@@ -46,6 +46,14 @@ class Prompt(models.Model):
     title_prompt = models.TextField(blank=True, null=True)
     intro_prompt = models.TextField(blank=True, null=True)
     style_prompt = models.TextField(blank=True, null=True)
+
+    # Correct new fields
+    quick_style_snapshot_prompt = models.TextField(blank=True, null=True)
+    core_packing_guide_prompt = models.TextField(blank=True, null=True)
+    packing_essentials_checklist_prompt = models.TextField(blank=True, null=True)
+    style_tips_for_blending_prompt = models.TextField(blank=True, null=True)
+    destination_specific_extras_prompt = models.TextField(blank=True, null=True)
+
     conclusion_prompt = models.TextField(blank=True, null=True)
     meta_data_prompt = models.TextField(blank=True, null=True)
     featured_image_prompt = models.TextField(blank=True, null=True)
