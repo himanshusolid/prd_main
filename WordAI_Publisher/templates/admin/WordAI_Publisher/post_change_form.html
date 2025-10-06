@@ -218,6 +218,94 @@ document.addEventListener('DOMContentLoaded', function () {
     if (conclusionRow) conclusionRow.appendChild(document.getElementById('regen-conclusion-btn'));
     if (descriptionRow) descriptionRow.appendChild(document.getElementById('regen-meta-description-btn'));
     if (metaTitleRow) metaTitleRow.appendChild(document.getElementById('regen-meta-title-btn'));
+
+    
+});
+</script>
+<script>
+
+
+/* Reuse your existing getCSRFToken() and loader */
+function showLoader(show) {
+  const el = document.getElementById('fullPageLoader');
+  if (el) el.style.display = show ? 'flex' : 'none';
+}
+
+/** Generic section regeneration */
+async function regenerateSection(fieldName, buttonEl) {
+  try {
+    showLoader(true);
+    if (buttonEl) {
+      buttonEl.disabled = true;
+      buttonEl.textContent = '⏳ Regenerating...';
+    }
+
+    const resp = await fetch('/admin/WordAI_Publisher/keyword/ajax-regenerate-versions/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCSRFToken()
+      },
+      body: JSON.stringify({
+        post_id: '{{ original.pk }}',
+        content_type: fieldName
+      })
+    });
+
+    if (!resp.ok) {
+      const msg = await resp.text();
+      throw new Error(msg || 'Failed to regenerate');
+    }
+
+    const data = await resp.json(); // expect { html: "<h2>...</h2>..." }
+    const html = data.content || '';
+
+    // Update CKEditor instance if present, else the textarea value
+    const fieldId = 'id_' + fieldName;
+    const textarea = document.getElementById(fieldId);
+
+    if (window.CKEDITOR && CKEDITOR.instances[fieldId]) {
+      CKEDITOR.instances[fieldId].setData(html);
+    } else if (textarea) {
+      textarea.value = html;
+    }
+
+  } catch (e) {
+    alert('Regenerate error: ' + (e?.message || e));
+  } finally {
+    if (buttonEl) {
+      buttonEl.disabled = false;
+      buttonEl.textContent = '🔄 Regenerate';
+    }
+    showLoader(false);
+  }
+}
+
+
+/** Place buttons next to their fields and bind clicks */
+document.addEventListener('DOMContentLoaded', function () {
+  // Your existing placement for title/intro/etc. remains above
+
+  // 🗺️ Map buttons to fields
+  const modularMap = [
+    { btn: '#regen-quick-style-snapshot-btn', field: 'generated_quick_style_snapshot' },
+    { btn: '#regen-packing-essentials-btn',   field: 'generated_packing_essentials_checklist' },
+    { btn: '#regen-daytime-outfits-btn',      field: 'generated_daytime_outfits' },
+    { btn: '#regen-evening-nightlife-btn',    field: 'generated_evening_and_nightlife' },
+    { btn: '#regen-outdoor-activities-btn',   field: 'generated_outdoor_activities' },
+    { btn: '#regen-seasonal-variations-btn',  field: 'generated_seasonal_variations' },
+    { btn: '#regen-style-tips-blending-btn',  field: 'generated_style_tips_for_blending' },
+    { btn: '#regen-destination-extras-btn',   field: 'generated_destination_specific_extras' },
+  ];
+
+  modularMap.forEach(({ btn, field }) => {
+    const button = document.querySelector(btn);
+    const row = document.querySelector(`[name="${field}"]`)?.closest('.form-row, .form-group');
+    if (row && button) {
+      row.appendChild(button);
+      button.addEventListener('click', () => regenerateSection(field, button));
+    }
+  });
 });
 </script>
 
@@ -229,8 +317,19 @@ document.addEventListener('DOMContentLoaded', function () {
 <button type="button" id="regen-meta-title-btn" class="regen-btn">🔄 Regenerate</button>
 <button type="button" id="regen-meta-description-btn" class="regen-btn">🔄 Regenerate</button>
 
+<!-- 🆕 Modular section regenerate buttons -->
+<button type="button" id="regen-quick-style-snapshot-btn" class="regen-btn" data-field="generated_quick_style_snapshot">🔄 Regenerate</button>
+<button type="button" id="regen-packing-essentials-btn" class="regen-btn" data-field="generated_packing_essentials_checklist">🔄 Regenerate</button>
+<button type="button" id="regen-daytime-outfits-btn" class="regen-btn" data-field="generated_daytime_outfits">🔄 Regenerate</button>
+<button type="button" id="regen-evening-nightlife-btn" class="regen-btn" data-field="generated_evening_and_nightlife">🔄 Regenerate</button>
+<button type="button" id="regen-outdoor-activities-btn" class="regen-btn" data-field="generated_outdoor_activities">🔄 Regenerate</button>
+<button type="button" id="regen-seasonal-variations-btn" class="regen-btn" data-field="generated_seasonal_variations">🔄 Regenerate</button>
+<button type="button" id="regen-style-tips-blending-btn" class="regen-btn" data-field="generated_style_tips_for_blending">🔄 Regenerate</button>
+<button type="button" id="regen-destination-extras-btn" class="regen-btn" data-field="generated_destination_specific_extras">🔄 Regenerate</button>
+
 <!-- Loader -->
 <div id="fullPageLoader">
   ⏳ Generating, please wait...
 </div>
+
 {% endblock %}

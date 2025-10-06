@@ -49,7 +49,10 @@ class Prompt(models.Model):
 
     # Correct new fields
     quick_style_snapshot_prompt = models.TextField(blank=True, null=True)
-    core_packing_guide_prompt = models.TextField(blank=True, null=True)
+    daytime_outfits_prompt = models.TextField(blank=True, null=True)
+    evening_and_nightlife_prompt = models.TextField(blank=True, null=True)
+    outdoor_activities_prompt = models.TextField(blank=True, null=True)
+    seasonal_variations_prompt = models.TextField(blank=True, null=True)
     packing_essentials_checklist_prompt = models.TextField(blank=True, null=True)
     style_tips_for_blending_prompt = models.TextField(blank=True, null=True)
     destination_specific_extras_prompt = models.TextField(blank=True, null=True)
@@ -86,13 +89,21 @@ class Post(models.Model):
     generated_title = models.TextField(blank=True, null=True)
     generated_intro = models.TextField(blank=True, null=True)
     generated_style_section = models.TextField(blank=True, null=True)
+    generated_quick_style_snapshot = models.TextField(blank=True, null=True)
+    generated_packing_essentials_checklist = models.TextField(blank=True, null=True)
+    generated_daytime_outfits = models.TextField(blank=True, null=True)
+    generated_evening_and_nightlife = models.TextField(blank=True, null=True)
+    generated_outdoor_activities = models.TextField(blank=True, null=True)
+    generated_seasonal_variations = models.TextField(blank=True, null=True)
+    generated_style_tips_for_blending = models.TextField(blank=True, null=True)
+    generated_destination_specific_extras = models.TextField(blank=True, null=True)
     generated_conclusion = models.TextField(blank=True, null=True)
     meta_title = models.TextField(blank=True, null=True)
     meta_description = models.TextField(blank=True, null=True)
     featured_prompt_text = models.TextField(null=True, blank=True)
     style_prompts = models.JSONField(null=True, blank=True)  # style name → prompt
     style_image_descriptions = models.JSONField(null=True, blank=True)  # New field
-
+    
     STATUS_CHOICES = [
         ('draft', 'Draft'),
         ('pushed', 'Pushed'),

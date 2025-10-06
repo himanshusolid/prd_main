@@ -12,6 +12,7 @@ from django.db.models import JSONField  # ✅ Works with MySQL (Django 3.1+)
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 from django.http import HttpResponseRedirect
+from WordAI_Publisher.models import GenerationJob  # adjust import path if different
 
 import base64
 import csv
@@ -157,7 +158,6 @@ def top_up_missing_styles(client, system_prompt, base_style_prompt, have_titles,
     return extract_styles_from_html(more_html)
 
 
-# =============== Main worker ===============
 def _run_generation_job(job_id: int):
     """Process a single queued job."""
     client = _gpt_client()
@@ -181,8 +181,8 @@ def _run_generation_job(job_id: int):
             raise RuntimeError("No ModelInfo records available")
         model_info = random.choice(models_list)
 
-        # --- Build prompts (same as your existing code) ---
-        def fill_prompt(tmpl):
+        # --------- helpers ----------
+        def fill_prompt(tmpl: str) -> str:
             if tmpl:
                 return (tmpl
                         .replace('{{keyword}}', job.keyword.keyword or '')
@@ -193,125 +193,233 @@ def _run_generation_job(job_id: int):
                         .replace('{{year}}',          str(getattr(job, 'year', '') or '')))
             return ''
 
-        pr = job.prompt
-        if job.prompt_type == 'individual':
-            title_prompt = fill_prompt(getattr(pr, 'title_prompt', ''))
-            intro_prompt = fill_prompt(getattr(pr, 'intro_prompt', ''))
-            style_prompt = fill_prompt(getattr(pr, 'style_prompt', ''))
-            conclusion_prompt = fill_prompt(getattr(pr, 'conclusion_prompt', ''))
-            meta_data_prompt = fill_prompt(getattr(pr, 'meta_data_prompt', ''))
+        def ensure_h2(title: str, html: str) -> str:
+            if "<h2" in (html or "").lower():
+                return html
+            return f"<h2>{title}</h2>\n{html or ''}"
 
-            # Title
-            generated_title = gpt_content(client, "", title_prompt)
-            if generated_title:
+        # System prompts for different section types
+        PROSE_SYS = (
+            "You are a travel and fashion editor. Return clean HTML only. "
+            "Use <h2> for the exact section title and <p> paragraphs for content. "
+            "No markdown."
+        )
+        CHECKLIST_SYS = (
+            "You are a travel and fashion editor. Return clean HTML only. "
+            "Use <h2> for the exact section title and an unordered checklist using <ul><li> items. "
+            "No markdown."
+        )
+
+        def gen_section(title: str, user_prompt: str, mode: str = "prose") -> str:
+            if not user_prompt or not user_prompt.strip():
+                return ""
+            sys = CHECKLIST_SYS if mode == "checklist" else PROSE_SYS
+            body = gpt_content(client, sys, user_prompt) or ""
+            return ensure_h2(title, body)
+
+        pr = job.prompt
+
+        # ---------------------------------------------------------------------
+        # INDIVIDUAL FLOW
+        # ---------------------------------------------------------------------
+        if job.prompt_type == 'individual':
+
+            # =================== MODULAR BRANCH USING 8 PROMPTS ===================
+            if str(getattr(job, 'template_type', '')).lower() == 'modular':
+                # 1) Read and fill all eight prompts
+                p_quick   = fill_prompt(getattr(pr, 'quick_style_snapshot_prompt', ''))
+                p_pack    = fill_prompt(getattr(pr, 'packing_essentials_checklist_prompt', ''))
+                p_day     = fill_prompt(getattr(pr, 'daytime_outfits_prompt', ''))
+                p_eve     = fill_prompt(getattr(pr, 'evening_and_nightlife_prompt', ''))
+                p_outdoor = fill_prompt(getattr(pr, 'outdoor_activities_prompt', ''))
+                p_season  = fill_prompt(getattr(pr, 'seasonal_variations_prompt', ''))
+                p_blend   = fill_prompt(getattr(pr, 'style_tips_for_blending_prompt', ''))
+                p_extra   = fill_prompt(getattr(pr, 'destination_specific_extras_prompt', ''))
+
+                # 2) Generate each section
+                sec_quick  = gen_section("Quick Style Snapshot", p_quick, mode="prose")
+                sec_pack   = gen_section("Packing Essentials Checklist", p_pack, mode="checklist")
+                sec_day    = gen_section("Daytime Outfits", p_day, mode="prose")
+                sec_eve    = gen_section("Evening and Nightlife", p_eve, mode="prose")
+                sec_out    = gen_section("Outdoor Activities", p_outdoor, mode="prose")
+                sec_season = gen_section("Seasonal Variations", p_season, mode="prose")
+                sec_blend  = gen_section("Style Tips for Blending", p_blend, mode="prose")
+                sec_extra  = gen_section("Destination Specific Extras", p_extra, mode="prose")
+
+                # 3) Assemble in the intended order
+                modular_html = "\n\n".join([
+                    s for s in [
+                        sec_quick, sec_pack, sec_day, sec_eve,
+                        sec_out, sec_season, sec_blend, sec_extra
+                    ] if s
+                ])
+
+                # 4) You can still generate the usual title/intro/conclusion/meta
+                title_prompt      = fill_prompt(getattr(pr, 'title_prompt', ''))
+                intro_prompt      = fill_prompt(getattr(pr, 'intro_prompt', ''))
+                conclusion_prompt = fill_prompt(getattr(pr, 'conclusion_prompt', ''))
+                meta_data_prompt  = fill_prompt(getattr(pr, 'meta_data_prompt', ''))
+
+                generated_title = gpt_content(client, "", title_prompt) or ""
                 generated_title = generated_title.strip().strip('"').strip("'")
 
-            # Intro
-            generated_intro = gpt_content(
-                client,
-                "You are a helpful assistant that generates engaging article introductions. Do not use markdown.",
-                intro_prompt
-            )
-
-            # --- Generate style sections (first pass) ---
-            style_sys = (
-                "You are a helpful assistant that generates detailed style descriptions. "
-                "Use <h2> HTML headings for each style section, followed by paragraphs. "
-                "Do not use markdown."
-            )
-            generated_style_section = gpt_content(
-                client,
-                style_sys + f" Generate exactly {job.version_count} unique hairstyles.",
-                style_prompt
-            )
-
-            # --- Parse robustly + top-up if under-count ---
-            style_blocks = extract_styles_from_html(generated_style_section)
-
-            missing = job.version_count - len(style_blocks)
-            if missing > 0:
-                more_blocks = top_up_missing_styles(
-                    client=client,
-                    system_prompt=style_sys,
-                    base_style_prompt=style_prompt,
-                    have_titles=_titles_set(style_blocks),
-                    need_count=missing
-                )
-                style_blocks.extend(more_blocks)
-
-            # Keep all items by uniquifying duplicate titles
-            style_blocks = uniquify_titles(style_blocks)
-
-            # Final clamp: if more than requested, trim;
-            if len(style_blocks) > job.version_count:
-                style_blocks = style_blocks[:job.version_count]
-
-            # --- Image descriptions for each style block ---
-            style_image_descriptions = []
-            for block in style_blocks:
-                style_name = block["style_name"]
-                image_desc = gpt_content(
+                generated_intro = gpt_content(
                     client,
-                    "You are an editorial stylist creating image descriptions for a fashion AI. "
-                    "Write a visual description of the haircut below in 35–60 words. "
-                    "Include hair length, texture, shape, sides, top, and camera angle.",
-                    f"Hairstyle: {style_name}"
+                    "You are a helpful assistant that generates engaging article introductions. Do not use markdown.",
+                    intro_prompt
+                ) or ""
+
+                generated_conclusion = gpt_content(
+                    client,
+                    "You are a helpful assistant that generates article conclusions. Do not use markdown.",
+                    conclusion_prompt
+                ) or ""
+
+                meta_title = ''
+                meta_description = ''
+                if meta_data_prompt:
+                    meta_json = gpt_content(client, "Return JSON with meta_title and meta_description.", meta_data_prompt)
+                    try:
+                        meta_data = json.loads(meta_json or "{}")
+                        meta_title = meta_data.get('meta_title', '')
+                        meta_description = meta_data.get('meta_description', '')
+                    except Exception:
+                        meta_title = ''
+                        meta_description = meta_json or ''
+
+                # 5) Save. Reuse generated_style_section to store the modular HTML,
+                #    or add a new column if you prefer (generated_packing_guide).
+                post = Post.objects.create(
+                    keyword=job.keyword,
+                    prompt=pr,
+                    model_info=model_info,
+                    version=job.version_count,
+                    generated_title=generated_title,
+                    generated_intro=generated_intro,
+                    # ── Modular sections mapped 1:1 ──
+                    generated_quick_style_snapshot=sec_quick or "",
+                    generated_packing_essentials_checklist=sec_pack or "",
+                    generated_daytime_outfits=sec_day or "",
+                    generated_evening_and_nightlife=sec_eve or "",
+                    generated_outdoor_activities=sec_out or "",
+                    generated_seasonal_variations=sec_season or "",
+                    generated_style_tips_for_blending=sec_blend or "",
+                    generated_destination_specific_extras=sec_extra or "",
+                    generated_conclusion=generated_conclusion,
+                    meta_title=meta_title,
+                    meta_description=meta_description,
+                    status='draft',
+                    content_generated='completed',
+                    featured_image_status='in_process',
+                    style_images_status='completed',
                 )
-                style_image_descriptions.append({
-                    "style_name": style_name,
-                    "image_style_description": (image_desc or "").strip()
-                })
+                post.save()
+                threading.Thread(target=generate_post_images_task, args=(post.id,), daemon=True).start()
 
-            # Dict of name -> description (now safe because names are unique)
-            style_dict = {item["style_name"]: item["image_style_description"] for item in style_image_descriptions}
+            # =================== NON-MODULAR INDIVIDUAL FLOW (UNCHANGED) ===================
+            else:
+                title_prompt = fill_prompt(getattr(pr, 'title_prompt', ''))
+                intro_prompt = fill_prompt(getattr(pr, 'intro_prompt', ''))
+                style_prompt = fill_prompt(getattr(pr, 'style_prompt', ''))
+                conclusion_prompt = fill_prompt(getattr(pr, 'conclusion_prompt', ''))
+                meta_data_prompt = fill_prompt(getattr(pr, 'meta_data_prompt', ''))
 
-            # Rebuild the section from the parsed/uniquified blocks (consistent, optional)
-            generated_style_section = "\n\n".join(b["html"] for b in style_blocks)
+                generated_title = gpt_content(client, "", title_prompt)
+                if generated_title:
+                    generated_title = generated_title.strip().strip('"').strip("'")
 
-            # Conclusion
-            generated_conclusion = gpt_content(
-                client,
-                "You are a helpful assistant that generates article conclusions. Do not use markdown.",
-                conclusion_prompt
-            )
+                generated_intro = gpt_content(
+                    client,
+                    "You are a helpful assistant that generates engaging article introductions. Do not use markdown.",
+                    intro_prompt
+                )
 
-            # Meta
-            meta_title = ''
-            meta_description = ''
-            if meta_data_prompt:
-                meta_json = gpt_content(client, "Return JSON with meta_title and meta_description.", meta_data_prompt)
-                try:
-                    meta_data = json.loads(meta_json)
-                    meta_title = meta_data.get('meta_title', '')
-                    meta_description = meta_data.get('meta_description', '')
-                except Exception:
-                    # If it's not valid JSON, store the raw text in description
-                    meta_title = ''
-                    meta_description = meta_json
+                style_sys = (
+                    "You are a helpful assistant that generates detailed style descriptions. "
+                    "Use <h2> HTML headings for each style section, followed by paragraphs. "
+                    "Do not use markdown."
+                )
+                generated_style_section = gpt_content(
+                    client,
+                    style_sys + f" Generate exactly {job.version_count} unique hairstyles.",
+                    style_prompt
+                )
 
-            # Create Post
-            post = Post.objects.create(
-                keyword=job.keyword,
-                prompt=pr,
-                model_info=model_info,
-                version=job.version_count,
-                generated_title=generated_title,
-                generated_intro=generated_intro,
-                generated_style_section=generated_style_section,
-                generated_conclusion=generated_conclusion,
-                meta_title=meta_title,
-                meta_description=meta_description,
-                status='draft',
-                content_generated='completed',
-                featured_image_status='in_process',
-                style_images_status='in_process',
-                style_image_descriptions=style_dict
-            )
-            post.save()
-            threading.Thread(target=generate_post_images_task, args=(post.id,), daemon=True).start()
+                style_blocks = extract_styles_from_html(generated_style_section)
+                missing = job.version_count - len(style_blocks)
+                if missing > 0:
+                    more_blocks = top_up_missing_styles(
+                        client=client,
+                        system_prompt=style_sys,
+                        base_style_prompt=style_prompt,
+                        have_titles=_titles_set(style_blocks),
+                        need_count=missing
+                    )
+                    style_blocks.extend(more_blocks)
 
+                style_blocks = uniquify_titles(style_blocks)
+                if len(style_blocks) > job.version_count:
+                    style_blocks = style_blocks[:job.version_count]
+
+                style_image_descriptions = []
+                for block in style_blocks:
+                    style_name = block["style_name"]
+                    image_desc = gpt_content(
+                        client,
+                        "You are an editorial stylist creating image descriptions for a fashion AI. "
+                        "Write a visual description of the haircut below in 35–60 words. "
+                        "Include hair length, texture, shape, sides, top, and camera angle.",
+                        f"Hairstyle: {style_name}"
+                    )
+                    style_image_descriptions.append({
+                        "style_name": style_name,
+                        "image_style_description": (image_desc or "").strip()
+                    })
+                style_dict = {item["style_name"]: item["image_style_description"] for item in style_image_descriptions}
+                generated_style_section = "\n\n".join(b["html"] for b in style_blocks)
+
+                generated_conclusion = gpt_content(
+                    client,
+                    "You are a helpful assistant that generates article conclusions. Do not use markdown.",
+                    conclusion_prompt
+                )
+
+                meta_title = ''
+                meta_description = ''
+                if meta_data_prompt:
+                    meta_json = gpt_content(client, "Return JSON with meta_title and meta_description.", meta_data_prompt)
+                    try:
+                        meta_data = json.loads(meta_json)
+                        meta_title = meta_data.get('meta_title', '')
+                        meta_description = meta_data.get('meta_description', '')
+                    except Exception:
+                        meta_title = ''
+                        meta_description = meta_json
+
+                post = Post.objects.create(
+                    keyword=job.keyword,
+                    prompt=pr,
+                    model_info=model_info,
+                    version=job.version_count,
+                    generated_title=generated_title,
+                    generated_intro=generated_intro,
+                    generated_style_section=generated_style_section,
+                    generated_conclusion=generated_conclusion,
+                    meta_title=meta_title,
+                    meta_description=meta_description,
+                    status='draft',
+                    content_generated='completed',
+                    featured_image_status='in_process',
+                    style_images_status='in_process',
+                    style_image_descriptions=style_dict
+                )
+                post.save()
+                threading.Thread(target=generate_post_images_task, args=(post.id,), daemon=True).start()
+
+        # ---------------------------------------------------------------------
+        # MASTER PROMPT FLOW (UNCHANGED)
+        # ---------------------------------------------------------------------
         else:
-            # master prompt flow (same as your current one)
             system_prompt = (
                 "You are a professional SEO and content writer who returns STRICT JSON output for a blog article."
                 " Always return exactly this JSON structure: "
@@ -363,7 +471,6 @@ def _run_generation_job(job_id: int):
         job.error = str(e)
         job.finished_at = timezone.now()
         job.save(update_fields=['status', 'error', 'finished_at'])
-
 
 # =============================================================================
 # S3/Storage + WordPress Helpers
@@ -498,11 +605,14 @@ class PromptAdmin(admin.ModelAdmin):
         }),
         ('Prompts', {
             'fields': (
-                'master_prompt', 'title_prompt', 'intro_prompt', 'style_prompt',
-                'quick_style_snapshot_prompt', 'core_packing_guide_prompt','packing_essentials_checklist_prompt',
-                'style_tips_for_blending_prompt', 'destination_specific_extras_prompt',
-                'conclusion_prompt', 'meta_data_prompt',
-                'featured_image_prompt', 'image_prompt'
+                    'master_prompt', 'title_prompt', 'intro_prompt', 'style_prompt',
+                    'quick_style_snapshot_prompt',
+                    'daytime_outfits_prompt', 'evening_and_nightlife_prompt',
+                    'outdoor_activities_prompt', 'seasonal_variations_prompt',
+                    'packing_essentials_checklist_prompt',
+                    'style_tips_for_blending_prompt', 'destination_specific_extras_prompt',
+                    'conclusion_prompt', 'meta_data_prompt',
+                    'featured_image_prompt', 'image_prompt'
             ),
             'classes': ('wide',)
         }),
@@ -927,6 +1037,77 @@ class KeywordAdmin(admin.ModelAdmin):
                 post.generated_intro = content
                 post.save()
                 return JsonResponse({'success': True, 'message': 'Intro regenerated.', 'content': post.generated_intro})
+            elif content_type == 'generated_quick_style_snapshot':
+                content = gpt_content(
+                    "Return raw HTML only. Never use Markdown or code fences. ",
+                    fill_prompt(getattr(prompt, 'quick_style_snapshot_prompt', ''))
+                )
+                post.generated_quick_style_snapshot = content
+                post.save(update_fields=['generated_quick_style_snapshot'])
+                return JsonResponse({'success': True, 'message': 'Quick Style Snapshot regenerated.', 'content': post.generated_quick_style_snapshot})
+
+            elif content_type == 'generated_packing_essentials_checklist':
+                content = gpt_content(
+                    "Return raw HTML only. Never use Markdown or code fences. ",
+                    fill_prompt(getattr(prompt, 'packing_essentials_checklist_prompt', ''))
+                )
+                post.generated_packing_essentials_checklist = content
+                post.save(update_fields=['generated_packing_essentials_checklist'])
+                return JsonResponse({'success': True, 'message': 'Packing Essentials Checklist regenerated.', 'content': post.generated_packing_essentials_checklist})
+
+            elif content_type == 'generated_daytime_outfits':
+                content = gpt_content(
+                    "Return raw HTML only. Never use Markdown or code fences. ",
+                    fill_prompt(getattr(prompt, 'daytime_outfits_prompt', ''))
+                )
+                post.generated_daytime_outfits = content
+                post.save(update_fields=['generated_daytime_outfits'])
+                return JsonResponse({'success': True, 'message': 'Daytime Outfits regenerated.', 'content': post.generated_daytime_outfits})
+
+            elif content_type == 'generated_evening_and_nightlife':
+                content = gpt_content(
+                    "Return raw HTML only. Never use Markdown or code fences. ",
+                    fill_prompt(getattr(prompt, 'evening_and_nightlife_prompt', ''))
+                )
+                post.generated_evening_and_nightlife = content
+                post.save(update_fields=['generated_evening_and_nightlife'])
+                return JsonResponse({'success': True, 'message': 'Evening and Nightlife regenerated.', 'content': post.generated_evening_and_nightlife})
+
+            elif content_type == 'generated_outdoor_activities':
+                content = gpt_content(
+                    "Return raw HTML only. Never use Markdown or code fences. ",
+                    fill_prompt(getattr(prompt, 'outdoor_activities_prompt', ''))
+                )
+                post.generated_outdoor_activities = content
+                post.save(update_fields=['generated_outdoor_activities'])
+                return JsonResponse({'success': True, 'message': 'Outdoor Activities regenerated.', 'content': post.generated_outdoor_activities})
+
+            elif content_type == 'generated_seasonal_variations':
+                content = gpt_content(
+                    "Return raw HTML only. Never use Markdown or code fences. ",
+                    fill_prompt(getattr(prompt, 'seasonal_variations_prompt', ''))
+                )
+                post.generated_seasonal_variations = content
+                post.save(update_fields=['generated_seasonal_variations'])
+                return JsonResponse({'success': True, 'message': 'Seasonal Variations regenerated.', 'content': post.generated_seasonal_variations})
+
+            elif content_type == 'generated_style_tips_for_blending':
+                content = gpt_content(
+                    "Return raw HTML only. Never use Markdown or code fences. ",
+                    fill_prompt(getattr(prompt, 'style_tips_for_blending_prompt', ''))
+                )
+                post.generated_style_tips_for_blending = content
+                post.save(update_fields=['generated_style_tips_for_blending'])
+                return JsonResponse({'success': True, 'message': 'Style Tips for Blending regenerated.', 'content': post.generated_style_tips_for_blending})
+
+            elif content_type == 'generated_destination_specific_extras':
+                content = gpt_content(
+                   "Return raw HTML only. Never use Markdown or code fences. ",
+                    fill_prompt(getattr(prompt, 'destination_specific_extras_prompt', ''))
+                )
+                post.generated_destination_specific_extras = content
+                post.save(update_fields=['generated_destination_specific_extras'])
+                return JsonResponse({'success': True, 'message': 'Destination Specific Extras regenerated.', 'content': post.generated_destination_specific_extras})
 
             elif content_type == 'style_section':
                 content = gpt_content(
@@ -1503,7 +1684,24 @@ class PostAdmin(admin.ModelAdmin):
         combined_content = f"{post.generated_intro or ''}\n\n{post.generated_style_section or ''}\n\n{post.generated_conclusion or ''}"
         wordpress_api_url = settings.WORDPRESS_API_URL
 
-        # === STEP 1: Upload Featured Image (S3/storage-safe) ===
+        tmpl_type = ''
+        gj = (
+            GenerationJob.objects
+            .filter(post_id=post.id)                 # GenerationJob.post_id == Post.id
+            .order_by('-finished_at', '-started_at', '-id')  # latest job first
+            .values('template_type')
+            .first()
+        )
+        if gj and gj.get('template_type'):
+            tmpl_type = (gj['template_type'] or '').strip().lower()
+        else:
+            # optional fallback if no GenerationJob found
+            tmpl_type = (getattr(post, 'template_type', '') or '').strip().lower()
+
+        is_modular = (tmpl_type == 'modular')
+        print('template_type:', tmpl_type, 'is_modular:', is_modular)
+       
+        # === STEP 1: Upload Featured Image ===
         image_id = None
         try:
             if post.featured_image:
@@ -1520,54 +1718,55 @@ class PostAdmin(admin.ModelAdmin):
             if not silent:
                 self.message_user(request, f"Image upload exception: {e}", level=messages.ERROR)
 
-        # === STEP 2: Upload Gallery Style Images (keys, MEDIA URLs, or http URLs) ===
-        style_images_data = post.style_images or {}   # {style_name: key_or_url}
-        threads = []
+        # === STEP 2: Upload Gallery Style Images (SKIP for modular) ===
         gallery_media_ids = []
-        silent = False  # or pass in
+        if not is_modular:
+            style_images_data = post.style_images or {}   # {style_name: key_or_url}
+            threads = []
+            silent = False  # or pass in
 
-        def upload_image_thread(style_name, key_or_url, collected_ids):
-            try:
-                fobj, filename = _open_from_storage_or_url(key_or_url)
+            def upload_image_thread(style_name, key_or_url, collected_ids):
                 try:
-                    content_type = _guess_ct(filename) or "image/jpeg"
-                    files = {"file": (os.path.basename(filename), fobj, content_type)}
-
-                    media_headers = {
-                        "Authorization": f"Bearer {settings.WORDPRESS_JWT_TOKEN}",
-                        "User-Agent": "Mozilla/5.0",
-                        "Accept": "application/json",
-                    }  # no Content-Type here
-
-                    rr = requests.post(_wp_media_endpoint(), headers=media_headers, files=files, timeout=120)
-                finally:
+                    fobj, filename = _open_from_storage_or_url(key_or_url)
                     try:
-                        fobj.close()
-                    except Exception:
-                        pass
+                        content_type = _guess_ct(filename) or "image/jpeg"
+                        files = {"file": (os.path.basename(filename), fobj, content_type)}
 
-                if rr.status_code == 201:
-                    collected_ids.append(rr.json().get("id"))
-                elif not silent:
-                    msg = rr.text
-                    try:
-                        msg = rr.json()
-                    except Exception:
-                        pass
-                    print(f"[Gallery] Failed to upload {style_name}: {rr.status_code} {msg}")
-            except Exception as e:
-                if not silent:
-                    print(f"[Gallery] Error uploading {style_name}: {e}")
+                        media_headers = {
+                            "Authorization": f"Bearer {settings.WORDPRESS_JWT_TOKEN}",
+                            "User-Agent": "Mozilla/5.0",
+                            "Accept": "application/json",
+                        }
+                        rr = requests.post(_wp_media_endpoint(), headers=media_headers, files=files, timeout=120)
+                    finally:
+                        try:
+                            fobj.close()
+                        except Exception:
+                            pass
 
-        if isinstance(style_images_data, dict):
-            for style_name, key_or_url in style_images_data.items():
-                t = threading.Thread(target=upload_image_thread, args=(style_name, key_or_url, gallery_media_ids))
-                t.start()
-                threads.append(t)
+                    if rr.status_code == 201:
+                        collected_ids.append(rr.json().get("id"))
+                    elif not silent:
+                        msg = rr.text
+                        try:
+                            msg = rr.json()
+                        except Exception:
+                            pass
+                        print(f"[Gallery] Failed to upload {style_name}: {rr.status_code} {msg}")
+                except Exception as e:
+                    if not silent:
+                        print(f"[Gallery] Error uploading {style_name}: {e}")
 
-        for t in threads:
-            t.join()
+            if isinstance(style_images_data, dict):
+                for style_name, key_or_url in style_images_data.items():
+                    t = threading.Thread(target=upload_image_thread, args=(style_name, key_or_url, gallery_media_ids))
+                    t.start()
+                    threads.append(t)
 
+            for t in threads:
+                t.join()
+
+        # === STEP 3: Build payload (different ACF for modular) ===
         post_headers = {
             "Authorization": f"Bearer {settings.WORDPRESS_JWT_TOKEN}",
             "Content-Type": "application/json",
@@ -1575,17 +1774,42 @@ class PostAdmin(admin.ModelAdmin):
             "User-Agent": "Mozilla/5.0",
         }
 
+        # Base ACF common fields
+        acf_data = {
+            # template selector (keep your existing value or change when modular if you have a different template)
+            "ai_title": post.generated_title,
+            "ai_intro": post.generated_intro,
+            "ai_conclusion": post.generated_conclusion,
+        }
+
+        if is_modular:
+            # Send 8 separate modular fields; do NOT include style_images or ai_style
+            acf_data.update({
+                "field_66bb21792e74b": "single-modular-template",
+                "generated_quick_style_snapshot": post.generated_quick_style_snapshot,
+                "generated_packing_essentials_checklist": post.generated_packing_essentials_checklist,
+                "generated_daytime_outfits": post.generated_daytime_outfits,
+                "generated_evening_and_nightlife": post.generated_evening_and_nightlife,
+                "generated_outdoor_activities": post.generated_outdoor_activities,
+                "generated_seasonal_variations":  post.generated_seasonal_variations,
+                "generated_style_tips_for_blending":  post.generated_style_tips_for_blending,
+                "generated_destination_specific_extras": post.generated_destination_specific_extras,
+            })
+            # Optional: if you use a different template slug for modular, set it here:
+            # acf_data["field_66bb21792e74b"] = "modular-custom-template"
+        else:
+            # Regular article: single style section + gallery image IDs
+            acf_data.update({
+                "field_66bb21792e74b": "single-custom-template",
+                "ai_style": post.generated_style_section,
+                "style_images": gallery_media_ids,
+            })
+        # ⬇️ Debug + early return
+
         post_payload = {
             "title": title_content_plain,
             "status": "draft",
-            "acf": {
-                "field_66bb21792e74b": "single-custom-template",
-                "ai_title": post.generated_title,
-                "ai_intro": post.generated_intro,
-                "ai_style": post.generated_style_section,
-                "ai_conclusion": post.generated_conclusion,
-                "style_images": gallery_media_ids,
-            },
+            "acf": acf_data,
             "meta": {
                 "rank_math_title": post.meta_title,
                 "rank_math_description": post.meta_description,
@@ -1594,11 +1818,12 @@ class PostAdmin(admin.ModelAdmin):
         if image_id:
             post_payload["featured_media"] = image_id
 
+        # === STEP 4: Create post ===
         try:
             resp = requests.post(wordpress_api_url, headers=post_headers, json=post_payload, timeout=120)
             if resp.status_code == 201:
-                post.status = 'draft'  # or 'publish' to mirror WP; keep these in sync
-                post.save()
+                post.status = 'draft'  # or 'publish' to mirror WP
+                post.save(update_fields=['status'])
                 if not silent:
                     self.message_user(request, "Post pushed to WordPress!", level=messages.SUCCESS)
                 ok = True
