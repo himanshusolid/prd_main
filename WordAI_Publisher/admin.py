@@ -200,11 +200,13 @@ def _run_generation_job(job_id: int):
 
         # System prompts for different section types
         PROSE_SYS = (
+            "Return raw HTML only. Never use Markdown or code fences. "
             "You are a travel and fashion editor. Return clean HTML only. "
             "Use <h2> for the exact section title and <p> paragraphs for content. "
             "No markdown."
         )
         CHECKLIST_SYS = (
+            "Return raw HTML only. Never use Markdown or code fences. "
             "You are a travel and fashion editor. Return clean HTML only. "
             "Use <h2> for the exact section title and an unordered checklist using <ul><li> items. "
             "No markdown."
@@ -311,7 +313,9 @@ def _run_generation_job(job_id: int):
                     status='draft',
                     content_generated='completed',
                     featured_image_status='in_process',
-                    style_images_status='completed',
+                    style_images_status='Not generated',
+                    modular_images_status = 'in_process'
+
                 )
                 post.save()
                 threading.Thread(target=generate_post_images_task, args=(post.id,), daemon=True).start()
@@ -605,14 +609,19 @@ class PromptAdmin(admin.ModelAdmin):
         }),
         ('Prompts', {
             'fields': (
-                    'master_prompt', 'title_prompt', 'intro_prompt', 'style_prompt',
-                    'quick_style_snapshot_prompt',
-                    'daytime_outfits_prompt', 'evening_and_nightlife_prompt',
-                    'outdoor_activities_prompt', 'seasonal_variations_prompt',
-                    'packing_essentials_checklist_prompt',
-                    'style_tips_for_blending_prompt', 'destination_specific_extras_prompt',
-                    'conclusion_prompt', 'meta_data_prompt',
-                    'featured_image_prompt', 'image_prompt'
+                'master_prompt', 'title_prompt', 'intro_prompt', 'style_prompt',
+
+                'quick_style_snapshot_prompt', 'quick_style_snapshot_image_prompt',
+                'daytime_outfits_prompt', 'daytime_outfits_image_prompt',
+                'evening_and_nightlife_prompt', 'evening_and_nightlife_image_prompt',
+                'outdoor_activities_prompt', 'outdoor_activities_image_prompt',
+                'seasonal_variations_prompt', 'seasonal_variations_image_prompt',
+                'packing_essentials_checklist_prompt', 'packing_essentials_checklist_image_prompt',
+                'style_tips_for_blending_prompt', 'style_tips_for_blending_image_prompt',
+                'destination_specific_extras_prompt', 'destination_specific_extras_image_prompt',
+
+                'conclusion_prompt', 'meta_data_prompt',
+                'featured_image_prompt', 'image_prompt',
             ),
             'classes': ('wide',)
         }),
@@ -1589,6 +1598,7 @@ class PostAdmin(admin.ModelAdmin):
         'content_generated_icon',
         'featured_image_status_icon',
         'style_images_status_icon',
+        'modular_images_status_icon',
         'status', 'created_at',
         'preview_button', 'push_to_wordpress_button',
     )
@@ -1687,20 +1697,19 @@ class PostAdmin(admin.ModelAdmin):
         tmpl_type = ''
         gj = (
             GenerationJob.objects
-            .filter(post_id=post.id)                 # GenerationJob.post_id == Post.id
-            .order_by('-finished_at', '-started_at', '-id')  # latest job first
+            .filter(post_id=post.id)
+            .order_by('-finished_at', '-started_at', '-id')
             .values('template_type')
             .first()
         )
         if gj and gj.get('template_type'):
             tmpl_type = (gj['template_type'] or '').strip().lower()
         else:
-            # optional fallback if no GenerationJob found
             tmpl_type = (getattr(post, 'template_type', '') or '').strip().lower()
 
         is_modular = (tmpl_type == 'modular')
         print('template_type:', tmpl_type, 'is_modular:', is_modular)
-       
+
         # === STEP 1: Upload Featured Image ===
         image_id = None
         try:
@@ -1766,6 +1775,62 @@ class PostAdmin(admin.ModelAdmin):
             for t in threads:
                 t.join()
 
+        # === STEP 2b: Upload Modular Section Images (ONLY for modular) ===
+        modular_image_ids = {}  # {acf_field_name: media_id}
+        if is_modular:
+            # Map: Django Post field -> current URL/value on post
+            modular_sources = {
+                "generated_quick_style_snapshot_image":        getattr(post, "generated_quick_style_snapshot_image", None),
+                "generated_packing_essentials_checklist_image":getattr(post, "generated_packing_essentials_checklist_image", None),
+                "generated_daytime_outfits_image":             getattr(post, "generated_daytime_outfits_image", None),
+                "generated_evening_and_nightlife_image":       getattr(post, "generated_evening_and_nightlife_image", None),
+                "generated_outdoor_activities_image":          getattr(post, "generated_outdoor_activities_image", None),
+                "generated_seasonal_variations_image":         getattr(post, "generated_seasonal_variations_image", None),
+                "generated_style_tips_for_blending_image":     getattr(post, "generated_style_tips_for_blending_image", None),
+                "generated_destination_specific_extras_image": getattr(post, "generated_destination_specific_extras_image", None),
+            }
+
+            def upload_modular_image(acf_field_name, key_or_url, out_map):
+                """Uploads one modular image to WP media; stores media ID in out_map[acf_field_name]."""
+                if not key_or_url:
+                    out_map[acf_field_name] = None
+                    return
+                try:
+                    fobj, filename = _open_from_storage_or_url(key_or_url)
+                    try:
+                        content_type = _guess_ct(filename) or "image/jpeg"
+                        files = {"file": (os.path.basename(filename), fobj, content_type)}
+                        media_headers = {
+                            "Authorization": f"Bearer {settings.WORDPRESS_JWT_TOKEN}",
+                            "User-Agent": "Mozilla/5.0",
+                            "Accept": "application/json",
+                        }
+                        rr = requests.post(_wp_media_endpoint(), headers=media_headers, files=files, timeout=120)
+                    finally:
+                        try:
+                            fobj.close()
+                        except Exception:
+                            pass
+
+                    if rr.status_code == 201:
+                        out_map[acf_field_name] = rr.json().get("id")
+                    else:
+                        out_map[acf_field_name] = None
+                        if not silent:
+                            try:
+                                msg = rr.json().get('message', rr.text)
+                            except Exception:
+                                msg = rr.text
+                            print(f"[Modular] Failed to upload {acf_field_name}: {rr.status_code} {msg}")
+                except Exception as e:
+                    out_map[acf_field_name] = None
+                    if not silent:
+                        print(f"[Modular] Error uploading {acf_field_name}: {e}")
+
+            # Upload sequentially (you can thread these if you prefer)
+            for acf_name, src in modular_sources.items():
+                upload_modular_image(acf_name, src, modular_image_ids)
+
         # === STEP 3: Build payload (different ACF for modular) ===
         post_headers = {
             "Authorization": f"Bearer {settings.WORDPRESS_JWT_TOKEN}",
@@ -1776,27 +1841,35 @@ class PostAdmin(admin.ModelAdmin):
 
         # Base ACF common fields
         acf_data = {
-            # template selector (keep your existing value or change when modular if you have a different template)
             "ai_title": post.generated_title,
             "ai_intro": post.generated_intro,
             "ai_conclusion": post.generated_conclusion,
         }
 
         if is_modular:
-            # Send 8 separate modular fields; do NOT include style_images or ai_style
+            # Send 8 separate modular text fields
             acf_data.update({
-                "field_66bb21792e74b": "single-modular-template",
+                "field_66bb21792e74b": "single-modular-template",  # keep your template selector
                 "generated_quick_style_snapshot": post.generated_quick_style_snapshot,
                 "generated_packing_essentials_checklist": post.generated_packing_essentials_checklist,
                 "generated_daytime_outfits": post.generated_daytime_outfits,
                 "generated_evening_and_nightlife": post.generated_evening_and_nightlife,
                 "generated_outdoor_activities": post.generated_outdoor_activities,
-                "generated_seasonal_variations":  post.generated_seasonal_variations,
-                "generated_style_tips_for_blending":  post.generated_style_tips_for_blending,
+                "generated_seasonal_variations": post.generated_seasonal_variations,
+                "generated_style_tips_for_blending": post.generated_style_tips_for_blending,
                 "generated_destination_specific_extras": post.generated_destination_specific_extras,
             })
-            # Optional: if you use a different template slug for modular, set it here:
-            # acf_data["field_66bb21792e74b"] = "modular-custom-template"
+            # NEW: include the 8 image Media IDs (if uploaded)
+            acf_data.update({
+                "generated_quick_style_snapshot_image":        modular_image_ids.get("generated_quick_style_snapshot_image"),
+                "generated_packing_essentials_checklist_image":modular_image_ids.get("generated_packing_essentials_checklist_image"),
+                "generated_daytime_outfits_image":             modular_image_ids.get("generated_daytime_outfits_image"),
+                "generated_evening_and_nightlife_image":       modular_image_ids.get("generated_evening_and_nightlife_image"),
+                "generated_outdoor_activities_image":          modular_image_ids.get("generated_outdoor_activities_image"),
+                "generated_seasonal_variations_image":         modular_image_ids.get("generated_seasonal_variations_image"),
+                "generated_style_tips_for_blending_image":     modular_image_ids.get("generated_style_tips_for_blending_image"),
+                "generated_destination_specific_extras_image": modular_image_ids.get("generated_destination_specific_extras_image"),
+            })
         else:
             # Regular article: single style section + gallery image IDs
             acf_data.update({
@@ -1804,7 +1877,6 @@ class PostAdmin(admin.ModelAdmin):
                 "ai_style": post.generated_style_section,
                 "style_images": gallery_media_ids,
             })
-        # ⬇️ Debug + early return
 
         post_payload = {
             "title": title_content_plain,
@@ -1841,7 +1913,6 @@ class PostAdmin(admin.ModelAdmin):
                 self.message_user(request, f"Network/WordPress API Error: {e}", level=messages.ERROR)
 
         return ok
-
     # ---------------------------
     # Icons
     # ---------------------------
@@ -1869,6 +1940,18 @@ class PostAdmin(admin.ModelAdmin):
         else:
             return format_html('<span style="color:red;">&#10008;</span>')
     style_images_status_icon.short_description = "Style Images Status"
+
+
+    def modular_images_status_icon(self, obj):
+        status = getattr(obj, 'modular_images_status', 'not_generated')
+        if status == 'completed':
+            return format_html('<span title="Completed" style="color:green;">&#10004;</span>')
+        elif status == 'in_process':
+            return format_html('<span title="In process" style="color:orange;">&#8987;</span>')
+        else:
+            return format_html('<span title="Not generated" style="color:red;">&#10008;</span>')
+    modular_images_status_icon.short_description = "Modular Images Status"
+    modular_images_status_icon.admin_order_field = 'modular_images_status'
 
     # ---------------------------
     # Regeneration Actions

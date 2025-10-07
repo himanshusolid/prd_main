@@ -53,10 +53,37 @@
     display: none;
 }
 
+/* ---- Card used beside each section field ---- */
+.section-card {
+  border: 1px solid #ddd; border-radius: 8px; padding: 10px; background: #fff;
+  margin: 10px 0 18px;     max-width: 297px;
+  
+}
+.section-card img {
+  max-width: 195px;
+    max-height: 150px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    margin-bottom: 6px;
+  
+}
+.section-card .title {
+  font-size: 13px; font-weight: 600; margin: 6px 0 8px;
+}
+.section-card .btn-row button {
+  margin-top: 6px; padding: 6px 10px; font-size: 12px; border-radius: 4px; cursor: pointer;
+}
+.section-card .btn-row .regen {
+  border: 1px solid #79aec8; background: #f5f5f5;
+}
+.section-card .btn-row .view {
+  border: 1px solid #79aec8; background: #eef6fc; margin-left: 6px;
+}
 </style>
 
 <script>
 window.addEventListener('DOMContentLoaded', function () {
+    // Keep your existing repositioning for Featured + Style blocks
     const styleImagesSection = document.querySelector('[data-style-images-section]');
     const styleSectionField = document.querySelector('#id_generated_style_section');
     if (styleImagesSection && styleSectionField) {
@@ -78,6 +105,17 @@ window.addEventListener('DOMContentLoaded', function () {
             parentRow.parentNode.appendChild(featuredImageSection);
         }
     }
+
+    // NEW: move each section image card right after its own field
+    document.querySelectorAll('#section-cards-staging [data-section-card]').forEach(card => {
+        const anchorSel = card.getAttribute('data-anchor'); // e.g. "#id_generated_quick_style_snapshot"
+        const anchor = document.querySelector(anchorSel);
+        if (!anchor) return;
+        const row = anchor.closest('.form-row, .form-group');
+        if (!row) return;
+        row.insertAdjacentElement('afterend', card);
+        card.style.display = ''; // unhide
+    });
 });
 </script>
 
@@ -104,7 +142,7 @@ window.addEventListener('DOMContentLoaded', function () {
   {% endif %}
 </div>
 
-<!-- ========= STYLE IMAGES SECTION ========== -->
+<!-- ========= STYLE IMAGES SECTION (unchanged) ========== -->
 <div data-style-images-section>
   {% if original.style_images %}
     <div style="margin-top: 30px;">
@@ -135,13 +173,145 @@ window.addEventListener('DOMContentLoaded', function () {
   {% endif %}
 </div>
 
-<!-- ========= POPUP MODAL ========== -->
+<!-- ========= NEW: STAGING AREA FOR PER-SECTION CARDS ========= -->
+<!-- These are hidden initially; JS moves each card after its field -->
+<div id="section-cards-staging" style="display:none;">
+  <!-- Quick Style Snapshot -->
+  <div class="section-card" data-section-card="generated_quick_style_snapshot_image" data-anchor="#id_generated_quick_style_snapshot">
+    <div class="title">Quick Style Snapshot</div>
+    {% if original.generated_quick_style_snapshot_image %}
+      <a href="{{ original.generated_quick_style_snapshot_image }}" target="_blank">
+        <img src="{{ original.generated_quick_style_snapshot_image }}" alt="Quick Style Snapshot" />
+      </a>
+    {% else %}
+      <img src="/static/WordAI_Publisher/img/placeholder.png" alt="No image yet" />
+    {% endif %}
+    <div class="btn-row">
+      <!-- <button type="button" class="regen regen-section-image-btn" data-section-field="generated_quick_style_snapshot_image">🔄 Regenerate Image</button> -->
+      <button type="button" class="view" onclick="showReadOnlyPrompt('Prompt: Quick Style Snapshot', '{{ original.prompt.quick_style_snapshot_image_prompt|default_if_none:''|escapejs }}')">🔍 View Prompt</button>
+    </div>
+  </div>
+
+  <!-- Packing Essentials -->
+  <div class="section-card" data-section-card="generated_packing_essentials_checklist_image" data-anchor="#id_generated_packing_essentials_checklist">
+    <div class="title">Packing Essentials</div>
+    {% if original.generated_packing_essentials_checklist_image %}
+      <a href="{{ original.generated_packing_essentials_checklist_image }}" target="_blank">
+        <img src="{{ original.generated_packing_essentials_checklist_image }}" alt="Packing Essentials" />
+      </a>
+    {% else %}
+      <img src="/static/WordAI_Publisher/img/placeholder.png" alt="No image yet" />
+    {% endif %}
+    <div class="btn-row">
+      <!-- <button type="button" class="regen regen-section-image-btn" data-section-field="generated_packing_essentials_checklist_image">🔄 Regenerate Image</button> -->
+      <button type="button" class="view" onclick="showReadOnlyPrompt('Prompt: Packing Essentials', '{{ original.prompt.packing_essentials_checklist_image_prompt|default_if_none:''|escapejs }}')">🔍 View Prompt</button>
+    </div>
+  </div>
+
+  <!-- Daytime Outfits -->
+  <div class="section-card" data-section-card="generated_daytime_outfits_image" data-anchor="#id_generated_daytime_outfits">
+    <div class="title">Daytime Outfits</div>
+    {% if original.generated_daytime_outfits_image %}
+      <a href="{{ original.generated_daytime_outfits_image }}" target="_blank">
+        <img src="{{ original.generated_daytime_outfits_image }}" alt="Daytime Outfits" />
+      </a>
+    {% else %}
+      <img src="/static/WordAI_Publisher/img/placeholder.png" alt="No image yet" />
+    {% endif %}
+    <div class="btn-row">
+      <!-- <button type="button" class="regen regen-section-image-btn" data-section-field="generated_daytime_outfits_image">🔄 Regenerate Image</button> -->
+      <button type="button" class="view" onclick="showReadOnlyPrompt('Prompt: Daytime Outfits', '{{ original.prompt.daytime_outfits_image_prompt|default_if_none:''|escapejs }}')">🔍 View Prompt</button>
+    </div>
+  </div>
+
+  <!-- Evening & Nightlife -->
+  <div class="section-card" data-section-card="generated_evening_and_nightlife_image" data-anchor="#id_generated_evening_and_nightlife">
+    <div class="title">Evening & Nightlife</div>
+    {% if original.generated_evening_and_nightlife_image %}
+      <a href="{{ original.generated_evening_and_nightlife_image }}" target="_blank">
+        <img src="{{ original.generated_evening_and_nightlife_image }}" alt="Evening & Nightlife" />
+      </a>
+    {% else %}
+      <img src="/static/WordAI_Publisher/img/placeholder.png" alt="No image yet" />
+    {% endif %}
+    <div class="btn-row">
+      <!-- <button type="button" class="regen regen-section-image-btn" data-section-field="generated_evening_and_nightlife_image">🔄 Regenerate Image</button> -->
+      <button type="button" class="view" onclick="showReadOnlyPrompt('Prompt: Evening & Nightlife', '{{ original.prompt.evening_and_nightlife_image_prompt|default_if_none:''|escapejs }}')">🔍 View Prompt</button>
+    </div>
+  </div>
+
+  <!-- Outdoor Activities -->
+  <div class="section-card" data-section-card="generated_outdoor_activities_image" data-anchor="#id_generated_outdoor_activities">
+    <div class="title">Outdoor Activities</div>
+    {% if original.generated_outdoor_activities_image %}
+      <a href="{{ original.generated_outdoor_activities_image }}" target="_blank">
+        <img src="{{ original.generated_outdoor_activities_image }}" alt="Outdoor Activities" />
+      </a>
+    {% else %}
+      <img src="/static/WordAI_Publisher/img/placeholder.png" alt="No image yet" />
+    {% endif %}
+    <div class="btn-row">
+      <!-- <button type="button" class="regen regen-section-image-btn" data-section-field="generated_outdoor_activities_image">🔄 Regenerate Image</button> -->
+      <button type="button" class="view" onclick="showReadOnlyPrompt('Prompt: Outdoor Activities', '{{ original.prompt.outdoor_activities_image_prompt|default_if_none:''|escapejs }}')">🔍 View Prompt</button>
+    </div>
+  </div>
+
+  <!-- Seasonal Variations -->
+  <div class="section-card" data-section-card="generated_seasonal_variations_image" data-anchor="#id_generated_seasonal_variations">
+    <div class="title">Seasonal Variations</div>
+    {% if original.generated_seasonal_variations_image %}
+      <a href="{{ original.generated_seasonal_variations_image }}" target="_blank">
+        <img src="{{ original.generated_seasonal_variations_image }}" alt="Seasonal Variations" />
+      </a>
+    {% else %}
+      <img src="/static/WordAI_Publisher/img/placeholder.png" alt="No image yet" />
+    {% endif %}
+    <div class="btn-row">
+      <!-- <button type="button" class="regen regen-section-image-btn" data-section-field="generated_seasonal_variations_image">🔄 Regenerate Image</button> -->
+      <button type="button" class="view" onclick="showReadOnlyPrompt('Prompt: Seasonal Variations', '{{ original.prompt.seasonal_variations_image_prompt|default_if_none:''|escapejs }}')">🔍 View Prompt</button>
+    </div>
+  </div>
+
+  <!-- Style Tips for Blending -->
+  <div class="section-card" data-section-card="generated_style_tips_for_blending_image" data-anchor="#id_generated_style_tips_for_blending">
+    <div class="title">Style Tips for Blending</div>
+    {% if original.generated_style_tips_for_blending_image %}
+      <a href="{{ original.generated_style_tips_for_blending_image }}" target="_blank">
+        <img src="{{ original.generated_style_tips_for_blending_image }}" alt="Style Tips for Blending" />
+      </a>
+    {% else %}
+      <img src="/static/WordAI_Publisher/img/placeholder.png" alt="No image yet" />
+    {% endif %}
+    <div class="btn-row">
+      <!-- <button type="button" class="regen regen-section-image-btn" data-section-field="generated_style_tips_for_blending_image">🔄 Regenerate Image</button> -->
+      <button type="button" class="view" onclick="showReadOnlyPrompt('Prompt: Style Tips for Blending', '{{ original.prompt.style_tips_for_blending_image_prompt|default_if_none:''|escapejs }}')">🔍 View Prompt</button>
+    </div>
+  </div>
+
+  <!-- Destination-Specific Extras -->
+  <div class="section-card" data-section-card="generated_destination_specific_extras_image" data-anchor="#id_generated_destination_specific_extras">
+    <div class="title">Destination-Specific Extras</div>
+    {% if original.generated_destination_specific_extras_image %}
+      <a href="{{ original.generated_destination_specific_extras_image }}" target="_blank">
+        <img src="{{ original.generated_destination_specific_extras_image }}" alt="Destination-Specific Extras" />
+      </a>
+    {% else %}
+      <img src="/static/WordAI_Publisher/img/placeholder.png" alt="No image yet" />
+    {% endif %}
+    <div class="btn-row">
+      <!-- <button type="button" class="regen regen-section-image-btn" data-section-field="generated_destination_specific_extras_image">🔄 Regenerate Image</button> -->
+      <button type="button" class="view" onclick="showReadOnlyPrompt('Prompt: Destination-Specific Extras', '{{ original.prompt.destination_specific_extras_image_prompt|default_if_none:''|escapejs }}')">🔍 View Prompt</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========= POPUP MODAL (shared) ========== -->
 <div id="prompt-modal" style="display:none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
      background: white; border: 1px solid #ccc; border-radius: 10px; padding: 20px; z-index: 9999; max-width: 600px; width: 90%;">
   <h3 id="prompt-title" style="margin-top: 0;"></h3>
   <textarea id="prompt-content" style="width: 100%; height: 180px; white-space: pre-wrap; font-family: monospace; background: #f9f9f9; padding: 10px; border-radius: 6px; border: 1px solid #ccc;"></textarea>
   <div style="margin-top: 12px;">
-    <button onclick="savePromptContent()" style="padding: 6px 14px; border: none; background: #4CAF50; color: white; border-radius: 4px; cursor: pointer;">💾 Save</button>
+    <button id="prompt-save-btn" onclick="savePromptContent()" style="padding: 6px 14px; border: none; background: #4CAF50; color: white; border-radius: 4px; cursor: pointer;">💾 Save</button>
     <button onclick="closePromptPopup()" style="margin-left: 8px; padding: 6px 14px; border: none; background: #79aec8; color: white; border-radius: 4px; cursor: pointer;">Close</button>
   </div>
 </div>
@@ -158,10 +328,18 @@ function showPromptPopup(title, content, styleName = null) {
     document.getElementById('prompt-title').textContent = title;
     document.getElementById('prompt-content').value = content;
     currentPromptStyle = styleName;
+    document.getElementById('prompt-save-btn').style.display = ''; // editable prompts
     document.getElementById('prompt-modal').style.display = 'block';
     document.getElementById('prompt-overlay').style.display = 'block';
 }
-
+function showReadOnlyPrompt(title, content) {
+    document.getElementById('prompt-title').textContent = title;
+    document.getElementById('prompt-content').value = content;
+    currentPromptStyle = null;
+    document.getElementById('prompt-save-btn').style.display = 'none'; // view only
+    document.getElementById('prompt-modal').style.display = 'block';
+    document.getElementById('prompt-overlay').style.display = 'block';
+}
 function closePromptPopup() {
     document.getElementById('prompt-modal').style.display = 'none';
     document.getElementById('prompt-overlay').style.display = 'none';
@@ -169,125 +347,67 @@ function closePromptPopup() {
 function savePromptContent() {
     const updatedContent = document.getElementById('prompt-content').value;
     if (!currentPromptStyle) {
-        alert('Could not determine which prompt to update.');
+        alert('This prompt is view-only here. Edit it on the Prompt object.');
         return;
     }
-
     fetch('/admin/WordAI_Publisher/keyword/save-style-prompt/', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': getCSRFToken()
-        },
-        body: JSON.stringify({
-            style_name: currentPromptStyle,
-            content: updatedContent,
-            object_id: '{{ original.pk }}'
-        })
-    }).then(response => {
-        if (response.ok) {
-            alert('Prompt saved successfully!');
-            location.reload();
-            // ✅ LIVE UPDATE the UI so no refresh is needed
-            const previewElement = document.querySelector(`[data-style="${currentPromptStyle}"] .style-prompt-preview`);
-            if (previewElement) {
-                previewElement.textContent = updatedContent;
-            }
-
-            closePromptPopup();
-        } else {
-            alert('Failed to save prompt.');
-        }
-    });
+        headers: {'Content-Type': 'application/json','X-CSRFToken': getCSRFToken()},
+        body: JSON.stringify({ style_name: currentPromptStyle, content: updatedContent, object_id: '{{ original.pk }}' })
+    }).then(r => r.ok ? location.reload() : alert('Failed to save prompt.'));
 }
-
 function getCSRFToken() {
     const cookie = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
     return cookie ? cookie.split('=')[1] : '';
 }
 
-document.addEventListener('DOMContentLoaded', function () {
-    const titleRow = document.querySelector('[name="generated_title"]')?.closest('.form-row, .form-group');
-    const introRow = document.querySelector('[name="generated_intro"]')?.closest('.form-row, .form-group');
-    const conclusionRow = document.querySelector('[name="generated_conclusion"]')?.closest('.form-row, .form-group');
-    const descriptionRow = document.querySelector('[name="meta_description"]')?.closest('.form-row, .form-group');
-    const metaTitleRow = document.querySelector('[name="meta_title"]')?.closest('.form-row, .form-group');
-
-    if (titleRow) titleRow.appendChild(document.getElementById('regen-title-btn'));
-    if (introRow) introRow.appendChild(document.getElementById('regen-intro-btn'));
-    if (conclusionRow) conclusionRow.appendChild(document.getElementById('regen-conclusion-btn'));
-    if (descriptionRow) descriptionRow.appendChild(document.getElementById('regen-meta-description-btn'));
-    if (metaTitleRow) metaTitleRow.appendChild(document.getElementById('regen-meta-title-btn'));
-
-    
-});
-</script>
-<script>
-
-
-/* Reuse your existing getCSRFToken() and loader */
-function showLoader(show) {
-  const el = document.getElementById('fullPageLoader');
-  if (el) el.style.display = show ? 'flex' : 'none';
-}
-
-/** Generic section regeneration */
+/* TEXT regeneration (unchanged) */
 async function regenerateSection(fieldName, buttonEl) {
   try {
     showLoader(true);
-    if (buttonEl) {
-      buttonEl.disabled = true;
-      buttonEl.textContent = '⏳ Regenerating...';
-    }
-
+    if (buttonEl) { buttonEl.disabled = true; buttonEl.textContent = '⏳ Regenerating...'; }
     const resp = await fetch('/admin/WordAI_Publisher/keyword/ajax-regenerate-versions/', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': getCSRFToken()
-      },
-      body: JSON.stringify({
-        post_id: '{{ original.pk }}',
-        content_type: fieldName
-      })
+      headers: {'Content-Type': 'application/json','X-CSRFToken': getCSRFToken()},
+      body: JSON.stringify({ post_id: '{{ original.pk }}', content_type: fieldName })
     });
-
-    if (!resp.ok) {
-      const msg = await resp.text();
-      throw new Error(msg || 'Failed to regenerate');
-    }
-
-    const data = await resp.json(); // expect { html: "<h2>...</h2>..." }
+    if (!resp.ok) throw new Error(await resp.text() || 'Failed to regenerate');
+    const data = await resp.json();
     const html = data.content || '';
-
-    // Update CKEditor instance if present, else the textarea value
     const fieldId = 'id_' + fieldName;
-    const textarea = document.getElementById(fieldId);
-
-    if (window.CKEDITOR && CKEDITOR.instances[fieldId]) {
-      CKEDITOR.instances[fieldId].setData(html);
-    } else if (textarea) {
-      textarea.value = html;
-    }
-
-  } catch (e) {
-    alert('Regenerate error: ' + (e?.message || e));
-  } finally {
-    if (buttonEl) {
-      buttonEl.disabled = false;
-      buttonEl.textContent = '🔄 Regenerate';
-    }
-    showLoader(false);
-  }
+    if (window.CKEDITOR && CKEDITOR.instances[fieldId]) CKEDITOR.instances[fieldId].setData(html);
+    else { const t = document.getElementById(fieldId); if (t) t.value = html; }
+  } catch (e) { alert('Regenerate error: ' + (e?.message || e)); }
+  finally { if (buttonEl) { buttonEl.disabled = false; buttonEl.textContent = '🔄 Regenerate'; } showLoader(false); }
 }
 
+/* NEW: regenerate a single section image */
+async function regenerateSectionImage(sectionField, buttonEl) {
+  try {
+    showLoader(true);
+    if (buttonEl) { buttonEl.disabled = true; buttonEl.textContent = '⏳ Regenerating...'; }
+    const resp = await fetch('/admin/WordAI_Publisher/keyword/regen-section-image/', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json','X-CSRFToken': getCSRFToken()},
+      body: JSON.stringify({ post_id: '{{ original.pk }}', section_field: sectionField })
+    });
+    if (!resp.ok) throw new Error(await resp.text() || 'Failed to regenerate section image');
 
-/** Place buttons next to their fields and bind clicks */
+    const data = await resp.json(); // { url: '...' }
+    const card = document.querySelector(`.section-card[data-section-card="${sectionField}"]`);
+    const img = card?.querySelector('img');
+    if (img && data.url) {
+      img.src = data.url + '?t=' + Date.now(); // cache-bust
+      const link = card.querySelector('a');
+      if (link) link.href = data.url;
+    }
+  } catch (e) { alert('Regenerate image error: ' + (e?.message || e)); }
+  finally { if (buttonEl) { buttonEl.disabled = false; buttonEl.textContent = '🔄 Regenerate Image'; } showLoader(false); }
+}
+
+/* Place text regen buttons + bind image regen */
 document.addEventListener('DOMContentLoaded', function () {
-  // Your existing placement for title/intro/etc. remains above
-
-  // 🗺️ Map buttons to fields
-  const modularMap = [
+  const map = [
     { btn: '#regen-quick-style-snapshot-btn', field: 'generated_quick_style_snapshot' },
     { btn: '#regen-packing-essentials-btn',   field: 'generated_packing_essentials_checklist' },
     { btn: '#regen-daytime-outfits-btn',      field: 'generated_daytime_outfits' },
@@ -297,19 +417,28 @@ document.addEventListener('DOMContentLoaded', function () {
     { btn: '#regen-style-tips-blending-btn',  field: 'generated_style_tips_for_blending' },
     { btn: '#regen-destination-extras-btn',   field: 'generated_destination_specific_extras' },
   ];
-
-  modularMap.forEach(({ btn, field }) => {
+  map.forEach(({ btn, field }) => {
     const button = document.querySelector(btn);
     const row = document.querySelector(`[name="${field}"]`)?.closest('.form-row, .form-group');
-    if (row && button) {
-      row.appendChild(button);
-      button.addEventListener('click', () => regenerateSection(field, button));
-    }
+    if (row && button) { row.appendChild(button); button.addEventListener('click', () => regenerateSection(field, button)); }
+  });
+
+  document.querySelectorAll('.regen-section-image-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const field = btn.getAttribute('data-section-field');
+      regenerateSectionImage(field, btn);
+    });
   });
 });
+
+/* Loader */
+function showLoader(show) {
+  const el = document.getElementById('fullPageLoader');
+  if (el) el.style.display = show ? 'flex' : 'none';
+}
 </script>
 
-<!-- Regenerate Buttons -->
+<!-- Regenerate Buttons (TEXT) -->
 <button type="button" id="regen-title-btn" class="regen-btn">🔄 Regenerate</button>
 <button type="button" id="regen-intro-btn" class="regen-btn">🔄 Regenerate</button>
 <button type="button" id="regen-style-btn" class="regen-btn">🔄 Regenerate</button>
@@ -317,7 +446,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <button type="button" id="regen-meta-title-btn" class="regen-btn">🔄 Regenerate</button>
 <button type="button" id="regen-meta-description-btn" class="regen-btn">🔄 Regenerate</button>
 
-<!-- 🆕 Modular section regenerate buttons -->
+<!-- Modular section text regenerate buttons -->
 <button type="button" id="regen-quick-style-snapshot-btn" class="regen-btn" data-field="generated_quick_style_snapshot">🔄 Regenerate</button>
 <button type="button" id="regen-packing-essentials-btn" class="regen-btn" data-field="generated_packing_essentials_checklist">🔄 Regenerate</button>
 <button type="button" id="regen-daytime-outfits-btn" class="regen-btn" data-field="generated_daytime_outfits">🔄 Regenerate</button>
@@ -331,5 +460,4 @@ document.addEventListener('DOMContentLoaded', function () {
 <div id="fullPageLoader">
   ⏳ Generating, please wait...
 </div>
-
 {% endblock %}

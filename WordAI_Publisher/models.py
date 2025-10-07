@@ -49,13 +49,29 @@ class Prompt(models.Model):
 
     # Correct new fields
     quick_style_snapshot_prompt = models.TextField(blank=True, null=True)
+    quick_style_snapshot_image_prompt = models.TextField(blank=True, null=True)
+
     daytime_outfits_prompt = models.TextField(blank=True, null=True)
+    daytime_outfits_image_prompt = models.TextField(blank=True, null=True)
+
     evening_and_nightlife_prompt = models.TextField(blank=True, null=True)
+    evening_and_nightlife_image_prompt = models.TextField(blank=True, null=True)
+
     outdoor_activities_prompt = models.TextField(blank=True, null=True)
+    outdoor_activities_image_prompt = models.TextField(blank=True, null=True)
+
     seasonal_variations_prompt = models.TextField(blank=True, null=True)
+    seasonal_variations_image_prompt = models.TextField(blank=True, null=True)
+
     packing_essentials_checklist_prompt = models.TextField(blank=True, null=True)
+    packing_essentials_checklist_image_prompt = models.TextField(blank=True, null=True)
+
     style_tips_for_blending_prompt = models.TextField(blank=True, null=True)
+    style_tips_for_blending_image_prompt = models.TextField(blank=True, null=True)
+
     destination_specific_extras_prompt = models.TextField(blank=True, null=True)
+    destination_specific_extras_image_prompt = models.TextField(blank=True, null=True)
+
 
     conclusion_prompt = models.TextField(blank=True, null=True)
     meta_data_prompt = models.TextField(blank=True, null=True)
@@ -89,14 +105,31 @@ class Post(models.Model):
     generated_title = models.TextField(blank=True, null=True)
     generated_intro = models.TextField(blank=True, null=True)
     generated_style_section = models.TextField(blank=True, null=True)
+
     generated_quick_style_snapshot = models.TextField(blank=True, null=True)
+    generated_quick_style_snapshot_image = models.TextField(blank=True, null=True)
+
     generated_packing_essentials_checklist = models.TextField(blank=True, null=True)
+    generated_packing_essentials_checklist_image = models.TextField(blank=True, null=True)
+
     generated_daytime_outfits = models.TextField(blank=True, null=True)
+    generated_daytime_outfits_image = models.TextField(blank=True, null=True)
+
     generated_evening_and_nightlife = models.TextField(blank=True, null=True)
+    generated_evening_and_nightlife_image = models.TextField(blank=True, null=True)
+
     generated_outdoor_activities = models.TextField(blank=True, null=True)
+    generated_outdoor_activities_image = models.TextField(blank=True, null=True)
+
     generated_seasonal_variations = models.TextField(blank=True, null=True)
+    generated_seasonal_variations_image = models.TextField(blank=True, null=True)
+
     generated_style_tips_for_blending = models.TextField(blank=True, null=True)
+    generated_style_tips_for_blending_image = models.TextField(blank=True, null=True)
+
     generated_destination_specific_extras = models.TextField(blank=True, null=True)
+    generated_destination_specific_extras_image = models.TextField(blank=True, null=True)
+
     generated_conclusion = models.TextField(blank=True, null=True)
     meta_title = models.TextField(blank=True, null=True)
     meta_description = models.TextField(blank=True, null=True)
@@ -131,6 +164,15 @@ class Post(models.Model):
         ('completed', 'Completed'),
     ]
     style_images_status = models.CharField(max_length=16, choices=STYLE_IMAGES_STATUS_CHOICES, default='not_generated')
+    
+    MODULAR_STATUS_CHOICES = [
+        ('not_generated', 'Not generated'),
+        ('in_process', 'In process'),
+        ('completed', 'Completed'),
+    ]
+    modular_images_status = models.CharField(
+        max_length=20, default='not_generated', choices=MODULAR_STATUS_CHOICES
+    )
 
     def __str__(self):
         return f"{self.keyword.keyword} - v{self.version} ({self.status})"

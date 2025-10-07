@@ -2,130 +2,184 @@
 <!DOCTYPE html>
 <html>
 <style>
-  .preview-article table { width:100%; border-collapse:collapse; }
-.preview-article th, .preview-article td {
-  border:1px solid #e5e7eb; padding:10px 12px; text-align:left;
+  .preview-section-image {
+  display:block;
+  margin: 12px auto 16px;
+  max-width: 100%;
+  border-radius: 8px;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.06);
 }
-.preview-article th { background:#f8fafc; font-weight:600; }
+  .preview-article table { width:100%; border-collapse:collapse; }
+  .preview-article th, .preview-article td { border:1px solid #e5e7eb; padding:10px 12px; text-align:left; }
+  .preview-article th { background:#f8fafc; font-weight:600; }
 
-    .preview-article {
-        max-width: 700px;
-        margin: 30px auto;
-        font-family: 'Segoe UI', Arial, sans-serif;
-        background: #fff;
-        padding: 32px 32px 40px 32px;
-        border-radius: 12px;
-        box-shadow: 0 2px 16px rgba(0,0,0,0.07);
-    }
-    .preview-title {
-        font-size: 2.2em;
-        font-weight: bold;
-        margin-bottom: 18px;
-        line-height: 1.2;
-        color: #222;
-        text-align: center;
-    }
-    .preview-featured-image {
-        display: block;
-        margin: 0 auto 28px auto;
-        max-width: 100%;
-        border-radius: 8px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-    }
-    .preview-section {
-        margin-bottom: 40px;
-    }
-    .preview-section h2 {
-        font-size: 1.4em;
-        font-weight: 600;
-        margin: 32px 0 12px 0;
-        color: #1a1a1a;
-        letter-spacing: 0.01em;
-    }
-    .preview-section-content {
-        font-size: 1.05em;
-        color: #333;
-        text-align: justify;
-    }
-    .preview-conclusion {
-        margin-top: 40px;
-        padding-top: 18px;
-        border-top: 1px solid #eee;
-        font-size: 1.1em;
-        color: #222;
-        font-style: italic;
-    }
-    .placeholder-img {
-        max-width: 693px;
-    }
-       .preview-intro {
-        font-size: 1.15em;
-        color: #444;
-        margin-bottom: 32px;
-        text-align: justify;
-    }
+  .preview-article {
+      max-width: 700px;
+      margin: 30px auto;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #fff;
+      padding: 32px 32px 40px 32px;
+      border-radius: 12px;
+      box-shadow: 0 2px 16px rgba(0,0,0,0.07);
+  }
+  .preview-title {
+      font-size: 2.2em;
+      font-weight: bold;
+      margin-bottom: 18px;
+      line-height: 1.2;
+      color: #222;
+      text-align: center;
+  }
+  .preview-featured-image,
+  .placeholder-img {
+      display:block;
+      margin: 0 auto 28px auto;
+      max-width: 100%;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+
+  .preview-section { margin-bottom: 40px; }
+  .preview-section h2 {
+      font-size: 1.4em;
+      font-weight: 600;
+      margin: 32px 0 12px 0;
+      color: #1a1a1a;
+      letter-spacing: 0.01em;
+  }
+  .preview-section-content { font-size: 1.05em; color: #333; text-align: justify; }
+  .preview-intro { font-size: 1.15em; color: #444; margin-bottom: 32px; text-align: justify; }
+  .preview-conclusion {
+      margin-top: 40px; padding-top: 18px; border-top: 1px solid #eee;
+      font-size: 1.1em; color: #222; font-style: italic;
+  }
+
+  /* NEW: per-section image styling */
+  .preview-section-image {
+      display:block;
+      margin: 12px auto 16px;
+      max-width: 100%;
+      border-radius: 8px;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.06);
+  }
 </style>
-    
-<div class="preview-article">
-    <div class="preview-title">{{ post.generated_title|safe }}</div>
-  
-    {% if post.featured_image_status == 'in_process' %}
-      <img src="{% static 'WordAI_Publisher/img/placeholder.png' %}" alt="Image in process" class="placeholder-img" />
-    {% elif post.featured_image %}
-      <img src="{{ post.featured_image.url }}" alt="Featured image" class="placeholder-img" />
-    {% endif %}
-  
-    <div class="preview-section">
-      {{ post.generated_intro|safe }}
-    </div>
-  
-    {# ===== Regular Style Section ===== #}
-    {% for section in style_sections %}
-    <div class="preview-style-section">
-        <div class="preview-style-heading">{{ section.heading|safe }}</div>
-        
-        {% if section.image_url %}
-            <img src="{{ section.image_url }}" class="preview-style-image"  style=" max-width: 693px;"/>
-        {% else %}
-            <p style="color: red; font-size: 12px;">
-                ⚠ No image found for: "{{ section.heading|striptags }}"
-            </p>
-        {% endif %}
 
-        <div class="preview-style-content">{{ section.content|safe }}</div>
-    </div>
-{% endfor %}
-  
-    {# ===== Modular Sections ===== #}
-    {% if post.generated_quick_style_snapshot %}
-      <div class="preview-section">{{ post.generated_quick_style_snapshot|safe }}</div>
-    {% endif %}
-    {% if post.generated_packing_essentials_checklist %}
-      <div class="preview-section">{{ post.generated_packing_essentials_checklist|safe }}</div>
-    {% endif %}
-    {% if post.generated_daytime_outfits %}
-      <div class="preview-section">{{ post.generated_daytime_outfits|safe }}</div>
-    {% endif %}
-    {% if post.generated_evening_and_nightlife %}
-      <div class="preview-section">{{ post.generated_evening_and_nightlife|safe }}</div>
-    {% endif %}
-    {% if post.generated_outdoor_activities %}
-      <div class="preview-section">{{ post.generated_outdoor_activities|safe }}</div>
-    {% endif %}
-    {% if post.generated_seasonal_variations %}
-      <div class="preview-section">{{ post.generated_seasonal_variations|safe }}</div>
-    {% endif %}
-    {% if post.generated_style_tips_for_blending %}
-      <div class="preview-section">{{ post.generated_style_tips_for_blending|safe }}</div>
-    {% endif %}
-    {% if post.generated_destination_specific_extras %}
-      <div class="preview-section">{{ post.generated_destination_specific_extras|safe }}</div>
-    {% endif %}
-  
-    <div class="preview-conclusion">
-      {{ post.generated_conclusion|safe }}
-    </div>
+<div class="preview-article">
+  <div class="preview-title">{{ post.generated_title|safe }}</div>
+
+  {% if post.featured_image_status == 'in_process' %}
+    <img src="{% static 'WordAI_Publisher/img/placeholder.png' %}" alt="Image in process" class="placeholder-img" />
+  {% elif post.featured_image %}
+    <img src="{{ post.featured_image.url }}" alt="Featured image" class="preview-featured-image" />
+  {% endif %}
+
+  <div class="preview-section preview-intro">
+    {{ post.generated_intro|safe }}
   </div>
-  </html>
+
+  {# ===== Regular Style Section (unchanged) ===== #}
+  {% for section in style_sections %}
+    <div class="preview-section preview-style-section">
+      <div class="preview-style-heading">{{ section.heading|safe }}</div>
+
+      {% if section.image_url %}
+        <img src="{{ section.image_url }}" class="preview-section-image" alt="{{ section.heading|striptags }} image" />
+      {% endif %}
+
+      <div class="preview-style-content">{{ section.content|safe }}</div>
+    </div>
+  {% endfor %}
+
+  {# ===== Modular Sections (containers with data-image-url) ===== #}
+{% if post.generated_quick_style_snapshot or post.generated_quick_style_snapshot_image %}
+  <div class="preview-section" id="sec-quick-style-snapshot"
+       data-image-url="{{ post.generated_quick_style_snapshot_image|default_if_none:'' }}">
+    {{ post.generated_quick_style_snapshot|safe }}
+  </div>
+{% endif %}
+
+{% if post.generated_packing_essentials_checklist or post.generated_packing_essentials_checklist_image %}
+  <div class="preview-section" id="sec-packing-essentials"
+       data-image-url="{{ post.generated_packing_essentials_checklist_image|default_if_none:'' }}">
+    {{ post.generated_packing_essentials_checklist|safe }}
+  </div>
+{% endif %}
+
+{% if post.generated_daytime_outfits or post.generated_daytime_outfits_image %}
+  <div class="preview-section" id="sec-daytime-outfits"
+       data-image-url="{{ post.generated_daytime_outfits_image|default_if_none:'' }}">
+    {{ post.generated_daytime_outfits|safe }}
+  </div>
+{% endif %}
+
+{% if post.generated_evening_and_nightlife or post.generated_evening_and_nightlife_image %}
+  <div class="preview-section" id="sec-evening-nightlife"
+       data-image-url="{{ post.generated_evening_and_nightlife_image|default_if_none:'' }}">
+    {{ post.generated_evening_and_nightlife|safe }}
+  </div>
+{% endif %}
+
+{% if post.generated_outdoor_activities or post.generated_outdoor_activities_image %}
+  <div class="preview-section" id="sec-outdoor-activities"
+       data-image-url="{{ post.generated_outdoor_activities_image|default_if_none:'' }}">
+    {{ post.generated_outdoor_activities|safe }}
+  </div>
+{% endif %}
+
+{% if post.generated_seasonal_variations or post.generated_seasonal_variations_image %}
+  <div class="preview-section" id="sec-seasonal-variations"
+       data-image-url="{{ post.generated_seasonal_variations_image|default_if_none:'' }}">
+    {{ post.generated_seasonal_variations|safe }}
+  </div>
+{% endif %}
+
+{% if post.generated_style_tips_for_blending or post.generated_style_tips_for_blending_image %}
+  <div class="preview-section" id="sec-style-tips-blending"
+       data-image-url="{{ post.generated_style_tips_for_blending_image|default_if_none:'' }}">
+    {{ post.generated_style_tips_for_blending|safe }}
+  </div>
+{% endif %}
+
+{% if post.generated_destination_specific_extras or post.generated_destination_specific_extras_image %}
+  <div class="preview-section" id="sec-destination-extras"
+       data-image-url="{{ post.generated_destination_specific_extras_image|default_if_none:'' }}">
+    {{ post.generated_destination_specific_extras|safe }}
+  </div>
+{% endif %}
+<div class="preview-conclusion">
+  {{ post.generated_conclusion|safe }}
 </div>
-</html>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const ids = [
+      'sec-quick-style-snapshot',
+      'sec-packing-essentials',
+      'sec-daytime-outfits',
+      'sec-evening-nightlife',
+      'sec-outdoor-activities',
+      'sec-seasonal-variations',
+      'sec-style-tips-blending',
+      'sec-destination-extras'
+    ];
+  
+    ids.forEach(id => {
+      const sec = document.getElementById(id);
+      if (!sec) return;
+      const url = sec.dataset.imageUrl;
+      if (!url) return;
+  
+      const img = document.createElement('img');
+      img.src = url;
+      img.alt = 'Section image';
+      img.className = 'preview-section-image';
+  
+      const heading = sec.querySelector('h2, h3'); // h3 fallback just in case
+      if (heading) {
+        heading.insertAdjacentElement('afterend', img);
+      } else {
+        sec.insertAdjacentElement('afterbegin', img);
+      }
+    });
+  });
+  </script>
