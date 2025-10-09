@@ -40,6 +40,30 @@ from .admin_forms import CSVUploadForm, PostAdminForm
 # =============== Simple FIFO queue worker (single-thread) ===============
 _worker_guard = threading.Lock()
 _worker_thread = None
+    # Whitelist of the 8 new section image prompt keys
+# Map prompt keys -> section image field names
+SECTION_PROMPT_KEYS = {
+    "quick_style_snapshot_image_prompt",
+    "packing_essentials_checklist_image_prompt",
+    "daytime_outfits_image_prompt",
+    "evening_and_nightlife_image_prompt",
+    "outdoor_activities_image_prompt",
+    "seasonal_variations_image_prompt",
+    "style_tips_for_blending_image_prompt",
+    "destination_specific_extras_image_prompt",
+}
+
+PROMPT_TO_SECTION_FIELD = {
+    "quick_style_snapshot_image_prompt":          "generated_quick_style_snapshot_image",
+    "packing_essentials_checklist_image_prompt":  "generated_packing_essentials_checklist_image",
+    "daytime_outfits_image_prompt":               "generated_daytime_outfits_image",
+    "evening_and_nightlife_image_prompt":         "generated_evening_and_nightlife_image",
+    "outdoor_activities_image_prompt":            "generated_outdoor_activities_image",
+    "seasonal_variations_image_prompt":           "generated_seasonal_variations_image",
+    "style_tips_for_blending_image_prompt":       "generated_style_tips_for_blending_image",
+    "destination_specific_extras_image_prompt":   "generated_destination_specific_extras_image",
+}
+
 
 def _ensure_worker_running():
     """Start a single background worker to drain the queue."""
@@ -852,22 +876,23 @@ class KeywordAdmin(admin.ModelAdmin):
             'message': f"✅ Thanks! {len(created_jobs)} request(s) queued at {timezone.now().strftime('%Y-%m-%d %H:%M:%S')} and will run one by one."
         }, status=200)
 
+
     def save_style_prompt(self, request):
-        """Save a style prompt (JSON body)."""
+        """Save a style/section/featured prompt (JSON body)."""
         if request.method != "POST":
             return HttpResponseBadRequest("Only POST requests allowed.")
 
-        # Accept JSON body; return consistent errors
+        # Parse JSON safely
         try:
             if not request.body:
                 return JsonResponse({"success": False, "error": "Empty body"}, status=400)
-            data = json.loads(request.body.decode())
+            data = json.loads(request.body.decode() or "{}")
         except Exception as e:
             return JsonResponse({"success": False, "error": f"Invalid JSON: {e}"}, status=400)
 
         style_name = (data.get("style_name") or "").strip()
-        content = data.get("content")
-        object_id = data.get("object_id")
+        content    = data.get("content")
+        object_id  = data.get("object_id")
 
         if not style_name or content is None or not object_id:
             return JsonResponse({"success": False, "error": "Missing one or more required fields."}, status=400)
@@ -875,18 +900,42 @@ class KeywordAdmin(admin.ModelAdmin):
         obj = get_object_or_404(Post, pk=object_id)
 
         try:
+            # 1) Featured image prompt (simple text field)
             if style_name == "featured_image":
                 obj.featured_prompt_text = content
                 obj.save(update_fields=["featured_prompt_text"])
-            else:
-                prompts = obj.style_prompts or {}
-                prompts[style_name] = content
-                obj.style_prompts = prompts
-                obj.save(update_fields=["style_prompts"])
+                return JsonResponse({"success": True})
+
+            # 2) NEW: 8 modular section image prompts -> save to extra_image_used_prompts (keyed by section field)
+            if style_name in SECTION_PROMPT_KEYS:
+                section_field = PROMPT_TO_SECTION_FIELD.get(style_name)
+                if not section_field:
+                    return JsonResponse({"success": False, "error": "Unknown section prompt key."}, status=400)
+
+                current = obj.extra_image_used_prompts or {}
+                if not isinstance(current, dict):
+                    current = {}
+
+                # Store as plain string per your requirement:
+                #   { "generated_daytime_outfits_image": "the filled prompt" }
+                current[section_field] = content
+                obj.extra_image_used_prompts = current
+                obj.save(update_fields=["extra_image_used_prompts"])
+                return JsonResponse({"success": True})
+
+            # 3) Default: legacy/style images behavior (kept as-is)
+            prompts = obj.style_prompts or {}
+            if not isinstance(prompts, dict):
+                prompts = {}
+            prompts[style_name] = content
+            obj.style_prompts = prompts
+            obj.save(update_fields=["style_prompts"])
+            return JsonResponse({"success": True})
+
         except Exception as e:
             return JsonResponse({"success": False, "error": str(e)}, status=500)
 
-        return JsonResponse({"success": True})
+
 
     def ajax_regenerate_single_style(self, request):
         if request.method == 'POST':
@@ -1197,6 +1246,103 @@ class KeywordAdmin(admin.ModelAdmin):
                     kwargs={'only_featured': True, 'featured_prompt_text': post.featured_prompt_text}
                 ).start()
                 return JsonResponse({'success': True, 'message': 'Featured image regeneration started.', 'status': post.featured_image_status})
+            
+            elif content_type == 'generated_quick_style_snapshot_image':
+                status_field = 'modular_images_status' if hasattr(post, 'modular_images_status') else 'section_images_status'
+                setattr(post, status_field, 'in_process')
+                setattr(post, content_type, None)  # 👈 clear only this field
+                post.save(update_fields=[content_type, status_field])
+                threading.Thread(
+                    target=generate_post_images_task,
+                    args=(post.id,),
+                    kwargs={'only_sections': True, 'sections': ['generated_quick_style_snapshot_image']},
+                ).start()
+                return JsonResponse({'success': True, 'message': 'Quick Style Snapshot image regeneration started.', 'status': getattr(post, status_field)})
+
+            elif content_type == 'generated_packing_essentials_checklist_image':
+                status_field = 'modular_images_status' if hasattr(post, 'modular_images_status') else 'section_images_status'
+                setattr(post, status_field, 'in_process')
+                setattr(post, content_type, None)  # 👈 clear only this field
+                post.save(update_fields=[content_type, status_field])
+                threading.Thread(
+                    target=generate_post_images_task,
+                    args=(post.id,),
+                    kwargs={'only_sections': True, 'sections': ['generated_packing_essentials_checklist_image']},
+                ).start()
+                return JsonResponse({'success': True, 'message': 'Packing Essentials image regeneration started.', 'status': getattr(post, status_field)})
+
+            elif content_type == 'generated_daytime_outfits_image':
+                status_field = 'modular_images_status' if hasattr(post, 'modular_images_status') else 'section_images_status'
+                setattr(post, status_field, 'in_process')
+                setattr(post, content_type, None)  # 👈 clear only this field
+                post.save(update_fields=[content_type, status_field])
+                threading.Thread(
+                    target=generate_post_images_task,
+                    args=(post.id,),
+                    kwargs={'only_sections': True, 'sections': ['generated_daytime_outfits_image']},
+                ).start()
+                return JsonResponse({'success': True, 'message': 'Daytime Outfits image regeneration started.', 'status': getattr(post, status_field)})
+
+            elif content_type == 'generated_evening_and_nightlife_image':
+                status_field = 'modular_images_status' if hasattr(post, 'modular_images_status') else 'section_images_status'
+                setattr(post, status_field, 'in_process')
+                setattr(post, content_type, None)  # 👈 clear only this field
+                post.save(update_fields=[content_type, status_field])
+                threading.Thread(
+                    target=generate_post_images_task,
+                    args=(post.id,),
+                    kwargs={'only_sections': True, 'sections': ['generated_evening_and_nightlife_image']},
+                ).start()
+                return JsonResponse({'success': True, 'message': 'Evening & Nightlife image regeneration started.', 'status': getattr(post, status_field)})
+
+            elif content_type == 'generated_outdoor_activities_image':
+                status_field = 'modular_images_status' if hasattr(post, 'modular_images_status') else 'section_images_status'
+                setattr(post, status_field, 'in_process')
+                setattr(post, content_type, None)  # 👈 clear only this field
+                post.save(update_fields=[content_type, status_field])
+                threading.Thread(
+                    target=generate_post_images_task,
+                    args=(post.id,),
+                    kwargs={'only_sections': True, 'sections': ['generated_outdoor_activities_image']},
+                ).start()
+                return JsonResponse({'success': True, 'message': 'Outdoor Activities image regeneration started.', 'status': getattr(post, status_field)})
+
+            elif content_type == 'generated_seasonal_variations_image':
+                status_field = 'modular_images_status' if hasattr(post, 'modular_images_status') else 'section_images_status'
+                setattr(post, status_field, 'in_process')
+                setattr(post, content_type, None)  # 👈 clear only this field
+                post.save(update_fields=[content_type, status_field])
+                threading.Thread(
+                    target=generate_post_images_task,
+                    args=(post.id,),
+                    kwargs={'only_sections': True, 'sections': ['generated_seasonal_variations_image']},
+                ).start()
+                return JsonResponse({'success': True, 'message': 'Seasonal Variations image regeneration started.', 'status': getattr(post, status_field)})
+
+            elif content_type == 'generated_style_tips_for_blending_image':
+                status_field = 'modular_images_status' if hasattr(post, 'modular_images_status') else 'section_images_status'
+                setattr(post, status_field, 'in_process')
+                setattr(post, content_type, None)  # 👈 clear only this field
+                post.save(update_fields=[content_type, status_field])
+                threading.Thread(
+                    target=generate_post_images_task,
+                    args=(post.id,),
+                    kwargs={'only_sections': True, 'sections': ['generated_style_tips_for_blending_image']},
+                ).start()
+                return JsonResponse({'success': True, 'message': 'Style Tips for Blending image regeneration started.', 'status': getattr(post, status_field)})
+
+            elif content_type == 'generated_destination_specific_extras_image':
+                status_field = 'modular_images_status' if hasattr(post, 'modular_images_status') else 'section_images_status'
+                setattr(post, status_field, 'in_process')
+                setattr(post, content_type, None)  # 👈 clear only this field
+                post.save(update_fields=[content_type, status_field])
+                threading.Thread(
+                    target=generate_post_images_task,
+                    args=(post.id,),
+                    kwargs={'only_sections': True, 'sections': ['generated_destination_specific_extras_image']},
+                ).start()
+                return JsonResponse({'success': True, 'message': 'Destination-Specific Extras image regeneration started.', 'status': getattr(post, status_field)})
+
 
             elif content_type == 'style_images':
                 post.style_images_status = 'in_process'

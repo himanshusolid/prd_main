@@ -57,15 +57,13 @@
 .section-card {
   border: 1px solid #ddd; border-radius: 8px; padding: 10px; background: #fff;
   margin: 10px 0 18px;     max-width: 297px;
-  
 }
 .section-card img {
   max-width: 195px;
-    max-height: 150px;
-    border: 1px solid #ccc;
-    border-radius: 8px;
-    margin-bottom: 6px;
-  
+  max-height: 150px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  margin-bottom: 6px;
 }
 .section-card .title {
   font-size: 13px; font-weight: 600; margin: 6px 0 8px;
@@ -106,7 +104,7 @@ window.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    // NEW: move each section image card right after its own field
+    // Move each section image card right after its own field
     document.querySelectorAll('#section-cards-staging [data-section-card]').forEach(card => {
         const anchorSel = card.getAttribute('data-anchor'); // e.g. "#id_generated_quick_style_snapshot"
         const anchor = document.querySelector(anchorSel);
@@ -135,14 +133,16 @@ window.addEventListener('DOMContentLoaded', function () {
     <button type="button" id="regen-featured-btn" style="margin-left: 8px; padding: 12px 27px; background: #f5f5f5; border: 1px solid #79aec8; border-radius: 4px; color: #333; font-size: 13px; cursor: pointer;">
       🔄 Regenerate Featured Image
     </button>
-    <button type="button" onclick="showPromptPopup('Featured Image Prompt', '{{ original.featured_prompt_text|escapejs }}', 'featured_image')" style="margin-left: 10px; padding: 12px 20px; background: #eef6fc; border: 1px solid #79aec8; border-radius: 4px; font-size: 13px; cursor: pointer;">
+    <button type="button"
+            onclick="showPromptPopup('Featured Image Prompt', '{{ original.featured_prompt_text|escapejs }}', 'featured_image')"
+            style="margin-left: 10px; padding: 12px 20px; background: #eef6fc; border: 1px solid #79aec8; border-radius: 4px; font-size: 13px; cursor: pointer;">
       🔍 View Prompt
     </button>
   </div>
   {% endif %}
 </div>
 
-<!-- ========= STYLE IMAGES SECTION (unchanged) ========== -->
+<!-- ========= STYLE IMAGES SECTION ========== -->
 <div data-style-images-section>
   {% if original.style_images %}
     <div style="margin-top: 30px;">
@@ -173,8 +173,7 @@ window.addEventListener('DOMContentLoaded', function () {
   {% endif %}
 </div>
 
-<!-- ========= NEW: STAGING AREA FOR PER-SECTION CARDS ========= -->
-<!-- These are hidden initially; JS moves each card after its field -->
+<!-- ========= STAGING AREA FOR PER-SECTION CARDS ========= -->
 <div id="section-cards-staging" style="display:none;">
   <!-- Quick Style Snapshot -->
   <div class="section-card" data-section-card="generated_quick_style_snapshot_image" data-anchor="#id_generated_quick_style_snapshot">
@@ -187,8 +186,11 @@ window.addEventListener('DOMContentLoaded', function () {
       <img src="/static/WordAI_Publisher/img/placeholder.png" alt="No image yet" />
     {% endif %}
     <div class="btn-row">
-      <!-- <button type="button" class="regen regen-section-image-btn" data-section-field="generated_quick_style_snapshot_image">🔄 Regenerate Image</button> -->
-      <button type="button" class="view" onclick="showReadOnlyPrompt('Prompt: Quick Style Snapshot', '{{ original.prompt.quick_style_snapshot_image_prompt|default_if_none:''|escapejs }}')">🔍 View Prompt</button>
+      <button type="button" class="regen regen-section-image-btn" data-section-field="generated_quick_style_snapshot_image">🔄 Regenerate Image</button>
+      <button type="button" class="view"
+              onclick="showPromptPopup('Used Prompt: Quick Style Snapshot',
+                                       '{{ original.extra_image_used_prompts|get_item:"generated_quick_style_snapshot_image"|default_if_none:''|escapejs }}',
+                                       'quick_style_snapshot_image_prompt')">🔍 View Prompt</button>
     </div>
   </div>
 
@@ -203,8 +205,11 @@ window.addEventListener('DOMContentLoaded', function () {
       <img src="/static/WordAI_Publisher/img/placeholder.png" alt="No image yet" />
     {% endif %}
     <div class="btn-row">
-      <!-- <button type="button" class="regen regen-section-image-btn" data-section-field="generated_packing_essentials_checklist_image">🔄 Regenerate Image</button> -->
-      <button type="button" class="view" onclick="showReadOnlyPrompt('Prompt: Packing Essentials', '{{ original.prompt.packing_essentials_checklist_image_prompt|default_if_none:''|escapejs }}')">🔍 View Prompt</button>
+      <button type="button" class="regen regen-section-image-btn" data-section-field="generated_packing_essentials_checklist_image">🔄 Regenerate Image</button>
+      <button type="button" class="view"
+              onclick="showPromptPopup('Used Prompt: Packing Essentials',
+                                       '{{ original.extra_image_used_prompts|get_item:"generated_packing_essentials_checklist_image"|default_if_none:''|escapejs }}',
+                                       'packing_essentials_checklist_image_prompt')">🔍 View Prompt</button>
     </div>
   </div>
 
@@ -219,8 +224,11 @@ window.addEventListener('DOMContentLoaded', function () {
       <img src="/static/WordAI_Publisher/img/placeholder.png" alt="No image yet" />
     {% endif %}
     <div class="btn-row">
-      <!-- <button type="button" class="regen regen-section-image-btn" data-section-field="generated_daytime_outfits_image">🔄 Regenerate Image</button> -->
-      <button type="button" class="view" onclick="showReadOnlyPrompt('Prompt: Daytime Outfits', '{{ original.prompt.daytime_outfits_image_prompt|default_if_none:''|escapejs }}')">🔍 View Prompt</button>
+      <button type="button" class="regen regen-section-image-btn" data-section-field="generated_daytime_outfits_image">🔄 Regenerate Image</button>
+      <button type="button" class="view"
+              onclick="showPromptPopup('Used Prompt: Daytime Outfits',
+                                       '{{ original.extra_image_used_prompts|get_item:"generated_daytime_outfits_image"|default_if_none:''|escapejs }}')',
+                                       'daytime_outfits_image_prompt')">🔍 View Prompt</button>
     </div>
   </div>
 
@@ -235,8 +243,11 @@ window.addEventListener('DOMContentLoaded', function () {
       <img src="/static/WordAI_Publisher/img/placeholder.png" alt="No image yet" />
     {% endif %}
     <div class="btn-row">
-      <!-- <button type="button" class="regen regen-section-image-btn" data-section-field="generated_evening_and_nightlife_image">🔄 Regenerate Image</button> -->
-      <button type="button" class="view" onclick="showReadOnlyPrompt('Prompt: Evening & Nightlife', '{{ original.prompt.evening_and_nightlife_image_prompt|default_if_none:''|escapejs }}')">🔍 View Prompt</button>
+      <button type="button" class="regen regen-section-image-btn" data-section-field="generated_evening_and_nightlife_image">🔄 Regenerate Image</button>
+      <button type="button" class="view"
+              onclick="showPromptPopup('Used Prompt: Evening & Nightlife',
+                                       '{{ original.extra_image_used_prompts|get_item:"generated_evening_and_nightlife_image"|default_if_none:''|escapejs }}',
+                                       'evening_and_nightlife_image_prompt')">🔍 View Prompt</button>
     </div>
   </div>
 
@@ -251,8 +262,11 @@ window.addEventListener('DOMContentLoaded', function () {
       <img src="/static/WordAI_Publisher/img/placeholder.png" alt="No image yet" />
     {% endif %}
     <div class="btn-row">
-      <!-- <button type="button" class="regen regen-section-image-btn" data-section-field="generated_outdoor_activities_image">🔄 Regenerate Image</button> -->
-      <button type="button" class="view" onclick="showReadOnlyPrompt('Prompt: Outdoor Activities', '{{ original.prompt.outdoor_activities_image_prompt|default_if_none:''|escapejs }}')">🔍 View Prompt</button>
+      <button type="button" class="regen regen-section-image-btn" data-section-field="generated_outdoor_activities_image">🔄 Regenerate Image</button>
+      <button type="button" class="view"
+              onclick="showPromptPopup('Used Prompt: Outdoor Activities',
+                                       '{{ original.extra_image_used_prompts|get_item:"generated_outdoor_activities_image"|default_if_none:''|escapejs }}',
+                                       'outdoor_activities_image_prompt')">🔍 View Prompt</button>
     </div>
   </div>
 
@@ -267,8 +281,11 @@ window.addEventListener('DOMContentLoaded', function () {
       <img src="/static/WordAI_Publisher/img/placeholder.png" alt="No image yet" />
     {% endif %}
     <div class="btn-row">
-      <!-- <button type="button" class="regen regen-section-image-btn" data-section-field="generated_seasonal_variations_image">🔄 Regenerate Image</button> -->
-      <button type="button" class="view" onclick="showReadOnlyPrompt('Prompt: Seasonal Variations', '{{ original.prompt.seasonal_variations_image_prompt|default_if_none:''|escapejs }}')">🔍 View Prompt</button>
+      <button type="button" class="regen regen-section-image-btn" data-section-field="generated_seasonal_variations_image">🔄 Regenerate Image</button>
+      <button type="button" class="view"
+              onclick="showPromptPopup('Used Prompt: Seasonal Variations',
+                                       '{{ original.extra_image_used_prompts|get_item:"generated_seasonal_variations_image"|default_if_none:''|escapejs }}',
+                                       'seasonal_variations_image_prompt')">🔍 View Prompt</button>
     </div>
   </div>
 
@@ -283,8 +300,11 @@ window.addEventListener('DOMContentLoaded', function () {
       <img src="/static/WordAI_Publisher/img/placeholder.png" alt="No image yet" />
     {% endif %}
     <div class="btn-row">
-      <!-- <button type="button" class="regen regen-section-image-btn" data-section-field="generated_style_tips_for_blending_image">🔄 Regenerate Image</button> -->
-      <button type="button" class="view" onclick="showReadOnlyPrompt('Prompt: Style Tips for Blending', '{{ original.prompt.style_tips_for_blending_image_prompt|default_if_none:''|escapejs }}')">🔍 View Prompt</button>
+      <button type="button" class="regen regen-section-image-btn" data-section-field="generated_style_tips_for_blending_image">🔄 Regenerate Image</button>
+      <button type="button" class="view"
+              onclick="showPromptPopup('Used Prompt: Style Tips for Blending',
+                                       '{{ original.extra_image_used_prompts|get_item:"generated_style_tips_for_blending_image"|default_if_none:''|escapejs }}',
+                                       'style_tips_for_blending_image_prompt')">🔍 View Prompt</button>
     </div>
   </div>
 
@@ -299,8 +319,11 @@ window.addEventListener('DOMContentLoaded', function () {
       <img src="/static/WordAI_Publisher/img/placeholder.png" alt="No image yet" />
     {% endif %}
     <div class="btn-row">
-      <!-- <button type="button" class="regen regen-section-image-btn" data-section-field="generated_destination_specific_extras_image">🔄 Regenerate Image</button> -->
-      <button type="button" class="view" onclick="showReadOnlyPrompt('Prompt: Destination-Specific Extras', '{{ original.prompt.destination_specific_extras_image_prompt|default_if_none:''|escapejs }}')">🔍 View Prompt</button>
+      <button type="button" class="regen regen-section-image-btn" data-section-field="generated_destination_specific_extras_image">🔄 Regenerate Image</button>
+      <button type="button" class="view"
+              onclick="showPromptPopup('Used Prompt: Destination-Specific Extras',
+                                       '{{ original.extra_image_used_prompts|get_item:"generated_destination_specific_extras_image"|default_if_none:''|escapejs }}',
+                                       'destination_specific_extras_image_prompt')">🔍 View Prompt</button>
     </div>
   </div>
 </div>
@@ -311,6 +334,7 @@ window.addEventListener('DOMContentLoaded', function () {
   <h3 id="prompt-title" style="margin-top: 0;"></h3>
   <textarea id="prompt-content" style="width: 100%; height: 180px; white-space: pre-wrap; font-family: monospace; background: #f9f9f9; padding: 10px; border-radius: 6px; border: 1px solid #ccc;"></textarea>
   <div style="margin-top: 12px;">
+    <!-- Save button stays only in the popup -->
     <button id="prompt-save-btn" onclick="savePromptContent()" style="padding: 6px 14px; border: none; background: #4CAF50; color: white; border-radius: 4px; cursor: pointer;">💾 Save</button>
     <button onclick="closePromptPopup()" style="margin-left: 8px; padding: 6px 14px; border: none; background: #79aec8; color: white; border-radius: 4px; cursor: pointer;">Close</button>
   </div>
@@ -326,24 +350,27 @@ let currentPromptStyle = null;
 
 function showPromptPopup(title, content, styleName = null) {
     document.getElementById('prompt-title').textContent = title;
-    document.getElementById('prompt-content').value = content;
-    currentPromptStyle = styleName;
-    document.getElementById('prompt-save-btn').style.display = ''; // editable prompts
+    document.getElementById('prompt-content').value = content || '';
+    currentPromptStyle = styleName; // enables save
+    document.getElementById('prompt-save-btn').style.display = ''; // show Save
     document.getElementById('prompt-modal').style.display = 'block';
     document.getElementById('prompt-overlay').style.display = 'block';
 }
+
 function showReadOnlyPrompt(title, content) {
     document.getElementById('prompt-title').textContent = title;
-    document.getElementById('prompt-content').value = content;
-    currentPromptStyle = null;
-    document.getElementById('prompt-save-btn').style.display = 'none'; // view only
+    document.getElementById('prompt-content').value = content || '';
+    currentPromptStyle = null; // disables save
+    document.getElementById('prompt-save-btn').style.display = 'none';
     document.getElementById('prompt-modal').style.display = 'block';
     document.getElementById('prompt-overlay').style.display = 'block';
 }
+
 function closePromptPopup() {
     document.getElementById('prompt-modal').style.display = 'none';
     document.getElementById('prompt-overlay').style.display = 'none';
 }
+
 function savePromptContent() {
     const updatedContent = document.getElementById('prompt-content').value;
     if (!currentPromptStyle) {
@@ -354,21 +381,27 @@ function savePromptContent() {
         method: 'POST',
         headers: {'Content-Type': 'application/json','X-CSRFToken': getCSRFToken()},
         body: JSON.stringify({ style_name: currentPromptStyle, content: updatedContent, object_id: '{{ original.pk }}' })
-    }).then(r => r.ok ? location.reload() : alert('Failed to save prompt.'));
+    })
+    .then(async r => {
+        if (!r.ok) throw new Error(await r.text() || 'Failed to save prompt');
+        alert('✔ Prompt saved');
+        location.reload(); // refresh to show updated prompt if needed
+    })
+    .catch(e => alert('✖ ' + (e?.message || e)));
 }
+
 function getCSRFToken() {
     const cookie = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
     return cookie ? cookie.split('=')[1] : '';
 }
 
-/* TEXT regeneration (unchanged) */
 async function regenerateSection(fieldName, buttonEl) {
   try {
     showLoader(true);
     if (buttonEl) { buttonEl.disabled = true; buttonEl.textContent = '⏳ Regenerating...'; }
     const resp = await fetch('/admin/WordAI_Publisher/keyword/ajax-regenerate-versions/', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json','X-CSRFToken': getCSRFToken()},
+      headers: {'Content-Type': 'application/json','X-CSRFToken': getCSRFToken() },
       body: JSON.stringify({ post_id: '{{ original.pk }}', content_type: fieldName })
     });
     if (!resp.ok) throw new Error(await resp.text() || 'Failed to regenerate');
@@ -381,31 +414,43 @@ async function regenerateSection(fieldName, buttonEl) {
   finally { if (buttonEl) { buttonEl.disabled = false; buttonEl.textContent = '🔄 Regenerate'; } showLoader(false); }
 }
 
-/* NEW: regenerate a single section image */
+const PLACEHOLDER_URL = "{% static 'WordAI_Publisher/img/placeholder.png' %}";
+
 async function regenerateSectionImage(sectionField, buttonEl) {
+  const card = document.querySelector(`.section-card[data-section-card="${sectionField}"]`);
+  const img  = card?.querySelector('img');
+  const link = card?.querySelector('a');
+  const oldSrc = img ? img.src : null;
+
   try {
     showLoader(true);
     if (buttonEl) { buttonEl.disabled = true; buttonEl.textContent = '⏳ Regenerating...'; }
-    const resp = await fetch('/admin/WordAI_Publisher/keyword/regen-section-image/', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json','X-CSRFToken': getCSRFToken()},
-      body: JSON.stringify({ post_id: '{{ original.pk }}', section_field: sectionField })
-    });
-    if (!resp.ok) throw new Error(await resp.text() || 'Failed to regenerate section image');
+    if (img) img.src = PLACEHOLDER_URL;
 
-    const data = await resp.json(); // { url: '...' }
-    const card = document.querySelector(`.section-card[data-section-card="${sectionField}"]`);
-    const img = card?.querySelector('img');
-    if (img && data.url) {
-      img.src = data.url + '?t=' + Date.now(); // cache-bust
-      const link = card.querySelector('a');
+    const resp = await fetch('/admin/WordAI_Publisher/keyword/ajax-regenerate-versions/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken() },
+      body: JSON.stringify({ post_id: '{{ original.pk }}', content_type: sectionField })
+    });
+
+    if (!resp.ok) throw new Error(await resp.text() || 'Failed to start regeneration');
+
+    const data = await resp.json();
+    alert((data && data.message) ? `✔ ${data.message}` : '✔ Images are generating in background.\nPlease refresh the page after a few seconds.');
+
+    if (img && data && data.url) {
+      img.src = data.url + '?t=' + Date.now();
       if (link) link.href = data.url;
     }
-  } catch (e) { alert('Regenerate image error: ' + (e?.message || e)); }
-  finally { if (buttonEl) { buttonEl.disabled = false; buttonEl.textContent = '🔄 Regenerate Image'; } showLoader(false); }
+  } catch (e) {
+    alert('✖ Regenerate image error: ' + (e?.message || e));
+    if (img && oldSrc) img.src = oldSrc;
+  } finally {
+    if (buttonEl) { buttonEl.disabled = false; buttonEl.textContent = '🔄 Regenerate Image'; }
+    showLoader(false);
+  }
 }
 
-/* Place text regen buttons + bind image regen */
 document.addEventListener('DOMContentLoaded', function () {
   const map = [
     { btn: '#regen-quick-style-snapshot-btn', field: 'generated_quick_style_snapshot' },
@@ -431,7 +476,6 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 });
 
-/* Loader */
 function showLoader(show) {
   const el = document.getElementById('fullPageLoader');
   if (el) el.style.display = show ? 'flex' : 'none';

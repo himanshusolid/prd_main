@@ -136,7 +136,8 @@ class Post(models.Model):
     featured_prompt_text = models.TextField(null=True, blank=True)
     style_prompts = models.JSONField(null=True, blank=True)  # style name → prompt
     style_image_descriptions = models.JSONField(null=True, blank=True)  # New field
-    
+    extra_image_used_prompts = models.JSONField(default=dict, blank=True, null=True)
+
     STATUS_CHOICES = [
         ('draft', 'Draft'),
         ('pushed', 'Pushed'),
