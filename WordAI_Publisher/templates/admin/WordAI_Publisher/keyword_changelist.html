@@ -74,6 +74,7 @@
       <select name="template_type" id="template_type">
         <option value="regular" selected>HairStyles</option>
         <option value="modular">Modular</option>
+        <option value="Food Love">Food Love</option>
       </select>
 
       <!-- Version (hidden when template = modular) -->
@@ -99,10 +100,12 @@
     const versionInput = document.getElementById('modal-version-count');
 
     function toggleVersionVis() {
-      const isModular = templateSelect.value === 'modular';
-      versionWrap.style.display = isModular ? 'none' : 'block';
-      versionLabel.style.display = isModular ? 'none' : 'block';
-      versionInput.disabled = isModular;
+      // hide for Modular or Food Love
+      const v = templateSelect.value;
+      const hide = (v === 'modular' || v === 'Food Love');
+      versionWrap.style.display = hide ? 'none' : 'block';
+      versionLabel.style.display = hide ? 'none' : 'block';
+      versionInput.disabled = hide;
     }
     templateSelect.addEventListener('change', toggleVersionVis);
     toggleVersionVis(); // init on load
@@ -158,10 +161,12 @@
     const versionInput = document.getElementById('bulk-version-count');
 
     function toggleVersionVis() {
-      const isModular = templateSelect.value === 'modular';
-      versionWrap.style.display = isModular ? 'none' : 'block';
-      versionLabel.style.display = isModular ? 'none' : 'block';
-      versionInput.disabled = isModular;
+      // hide for Modular or Food Love (future-proof if you add Food Love to bulk)
+      const v = templateSelect.value;
+      const hide = (v === 'modular' || v === 'Food Love');
+      versionWrap.style.display = hide ? 'none' : 'block';
+      versionLabel.style.display = hide ? 'none' : 'block';
+      versionInput.disabled = hide;
     }
     templateSelect.addEventListener('change', toggleVersionVis);
     toggleVersionVis(); // init on load

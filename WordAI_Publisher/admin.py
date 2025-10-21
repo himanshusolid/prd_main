@@ -448,6 +448,78 @@ def _run_generation_job(job_id: int):
         # MASTER PROMPT FLOW (UNCHANGED)
         # ---------------------------------------------------------------------
         else:
+            template_type = str(getattr(job, 'template_type', '') or '').strip().lower()
+
+            # ========= SPECIAL CASE: MASTER + FOOD LOVE =========
+            if template_type in ('food love', 'food_love', 'foodlove'):
+                # 1) Generate full HTML from the master prompt
+                foodlove_sys = (
+                    "Return raw HTML only. Never use Markdown or code fences. "
+                    "You are an experienced food editor writing for a modern lifestyle site. "
+                    "Produce a complete article in clean HTML with semantic structure: "
+                    "<h1> (optional), <h2> section headings, <p> paragraphs, and lists where useful. "
+                    "Do not include scripts, styles, or external assets."
+                )
+                master_prompt_text = fill_prompt(getattr(pr, 'master_prompt', ''))
+                full_html = gpt_content(client, foodlove_sys, master_prompt_text) or ""
+
+                # 2) Meta data (reuse the SAME feature/path used elsewhere)
+                meta_title = ''
+                meta_description = ''
+                meta_data_prompt = fill_prompt(getattr(pr, 'meta_data_prompt', ''))
+                if meta_data_prompt:
+                    meta_json = gpt_content(
+                        client,
+                        "Return JSON with meta_title and meta_description.",
+                        meta_data_prompt
+                    )
+                    try:
+                        meta_data = json.loads(meta_json or "{}")
+                        meta_title = meta_data.get('meta_title', '') or ''
+                        meta_description = meta_data.get('meta_description', '') or ''
+                    except Exception:
+                        # Fallback: if model returned plain text, keep it in description
+                        meta_title = ''
+                        meta_description = (meta_json or '').strip()
+
+                # 3) (Optional) Try to pull a title from the HTML's first <h1> if present
+                #    This is safe and doesn't conflict with meta fields.
+                def _extract_h1(html: str) -> str:
+                    import re
+                    m = re.search(r'<h1[^>]*>(.*?)</h1>', html, flags=re.I | re.S)
+                    return (m.group(1).strip() if m else '')
+
+                generated_title = _extract_h1(full_html)
+
+                # 4) Create post (NO images)
+                post = Post.objects.create(
+                    keyword=job.keyword,
+                    prompt=pr,
+                    model_info=model_info,
+                    version=job.version_count,
+                    generated_title=generated_title,
+                    generated_intro="",                       # not needed; content is in full HTML
+                    generated_style_section=full_html,        # store the whole HTML here
+                    generated_conclusion="",                  # not needed; already in HTML
+                    meta_title=meta_title,
+                    meta_description=meta_description,
+                    status='draft',
+                    content_generated='completed',
+                    featured_image_status='Not generated',
+                    style_images_status='Not generated',
+                    # If your model has modular_images_status, keep it consistent:
+                    # modular_images_status='Not generated'
+                )
+                post.save()
+
+                # 5) Finish job WITHOUT launching image thread
+                job.post = post
+                job.status = 'done'
+                job.finished_at = timezone.now()
+                job.save(update_fields=['post', 'status', 'finished_at'])
+                return
+
+            # ========= DEFAULT MASTER (existing JSON flow) =========
             system_prompt = (
                 "You are a professional SEO and content writer who returns STRICT JSON output for a blog article."
                 " Always return exactly this JSON structure: "
@@ -957,33 +1029,55 @@ class KeywordAdmin(admin.ModelAdmin):
         return JsonResponse({'success': False, 'message': 'Invalid request.'})
 
     def ajax_generate_versions(self, request):
+        """
+        Create a GenerationJob for a single keyword/prompt selection.
+
+        Updates:
+        - Normalizes `template_type` to a canonical slug: 'regular' | 'modular' | 'food_love'
+        - Validates against the normalized set to avoid case/value mismatches ('Food Love' vs 'food_love')
+        - Leaves the rest of the logic unchanged
+        """
         if request.method != 'POST':
             return JsonResponse({'success': False, 'message': 'Invalid request method.'}, status=405)
 
+        # ---- Helpers ----
+        def _normalize_template_type(val: str) -> str:
+            v = (val or '').strip().lower()
+            # collapse separators to space
+            v = v.replace('_', ' ').replace('-', ' ')
+            if v in ('food love', 'foodlove'):
+                return 'food_love'
+            if v == 'modular':
+                return 'modular'
+            if v == 'regular':
+                return 'regular'
+            return v  # unknown
+
         # ---- Parse body (JSON or form) ----
-        keyword_id = prompt_id = prompt_type = version_count = None
+        keyword_id = prompt_id = prompt_type = None
+        version_count = None
         template_type = season = year = None
-        data = None
 
         try:
             if request.content_type and request.content_type.startswith('application/json'):
                 raw = (request.body or b'').decode('utf-8') or '{}'
                 data = json.loads(raw)
-                keyword_id = data.get('keyword_id')
-                prompt_id = (data.get('prompt_id') or '').strip()
-                prompt_type = (data.get('prompt_type') or 'individual').strip().lower()
+
+                keyword_id    = data.get('keyword_id')
+                prompt_id     = (data.get('prompt_id') or '').strip()
+                prompt_type   = (data.get('prompt_type') or 'individual').strip().lower()
                 version_count = int(data.get('version_count') or 1)
-                template_type = (data.get('template_type') or 'regular').strip().lower()
-                season = (data.get('season') or '').strip().lower() or None
-                year = data.get('year')
+                template_type = _normalize_template_type(data.get('template_type') or 'regular')
+                season        = (data.get('season') or '').strip().lower() or None
+                year          = data.get('year')
             else:
-                keyword_id = request.POST.get('keyword_id')
-                prompt_id = (request.POST.get('prompt_id') or '').strip()
-                prompt_type = (request.POST.get('prompt_type') or 'individual').strip().lower()
+                keyword_id    = request.POST.get('keyword_id')
+                prompt_id     = (request.POST.get('prompt_id') or '').strip()
+                prompt_type   = (request.POST.get('prompt_type') or 'individual').strip().lower()
                 version_count = int(request.POST.get('version_count') or 1)
-                template_type = (request.POST.get('template_type') or 'regular').strip().lower()
-                season = (request.POST.get('season') or '').strip().lower() or None
-                year = request.POST.get('year')
+                template_type = _normalize_template_type(request.POST.get('template_type') or 'regular')
+                season        = (request.POST.get('season') or '').strip().lower() or None
+                year          = request.POST.get('year')
         except (ValueError, json.JSONDecodeError) as e:
             return JsonResponse({'success': False, 'message': f'Bad request body: {e}'}, status=400)
 
@@ -997,13 +1091,25 @@ class KeywordAdmin(admin.ModelAdmin):
 
         if not prompt_id:
             return JsonResponse({'success': False, 'message': 'Missing prompt_id'}, status=400)
+
         if prompt_type not in ('individual', 'master'):
-            return JsonResponse({'success': False, 'message': 'prompt_type must be \"individual\" or \"master\"'}, status=400)
+            return JsonResponse({'success': False, 'message': 'prompt_type must be "individual" or "master"'}, status=400)
+
         if version_count < 1:
             return JsonResponse({'success': False, 'message': 'version_count must be >= 1'}, status=400)
-        if template_type not in ('regular', 'modular'):
-            return JsonResponse({'success': False, 'message': 'template_type must be \"regular\" or \"modular\"'}, status=400)
 
+        # Accept normalized values only
+        allowed_templates = ('regular', 'modular', 'food_love')
+        if template_type not in allowed_templates:
+            return JsonResponse(
+                {
+                    'success': False,
+                    'message': 'template_type must be one of: "regular", "modular", "food_love"'
+                },
+                status=400
+            )
+
+        # If you ever need seasonal gating for modular, uncomment this block:
         # if template_type == 'modular':
         #     if not season:
         #         return JsonResponse({'success': False, 'message': 'season is required for modular template'}, status=400)
@@ -1023,7 +1129,7 @@ class KeywordAdmin(admin.ModelAdmin):
             prompt=prompt,
             prompt_type=prompt_type,
             version_count=version_count,
-            template_type=template_type,
+            template_type=template_type,  # canonical slug now
             season=season,
             year=year,
             created_by=request.user if request.user.is_authenticated else None,
@@ -1168,43 +1274,97 @@ class KeywordAdmin(admin.ModelAdmin):
                 return JsonResponse({'success': True, 'message': 'Destination Specific Extras regenerated.', 'content': post.generated_destination_specific_extras})
 
             elif content_type == 'style_section':
-                content = gpt_content(
-                    f"You are a helpful assistant that generates detailed style descriptions. "
-                    f"Use <h2> HTML headings for each style section, followed by paragraphs. "
-                    f"Do not use markdown. Generate exactly {version_count} unique hairstyles.",
-                    fill_prompt(prompt.style_prompt)
+                # --- Detect template type from latest GenerationJob ---
+                gj = (
+                    GenerationJob.objects
+                    .filter(post_id=post.id)
+                    .order_by('-finished_at', '-started_at', '-id')
+                    .values('template_type')
+                    .first()
+                )
+                tmpl = ((gj or {}).get('template_type') or (getattr(post, 'template_type', '') or '')).strip().lower()
+                tmpl_norm = tmpl.replace('_', ' ').replace('-', ' ')
+                is_food_love = (tmpl_norm in ('food love', 'foodlove'))
+
+                # --- Default Food Love system prompt ---
+                foodlove_sys = (
+                    "Return raw HTML only. Never use Markdown or code fences. "
+                    "You are an experienced food editor writing for a modern lifestyle site. "
+                    "Produce a complete article in clean HTML with semantic structure: "
+                    "<h1> (optional), <h2> section headings, <p> paragraphs, and lists where useful. "
+                    "Do not include scripts, styles, or external assets."
                 )
 
-                style_blocks = extract_styles_from_html(content)
-                style_image_descriptions = []
-                for block in style_blocks:
-                    style_name = block["style_name"]
-                    image_desc = gpt_content(
-                        "You are an editorial stylist creating image descriptions for a fashion AI. "
-                        "Write a visual description of the haircut below in 35–60 words. "
-                        "Include hair length, texture, shape, sides, top, and camera angle.",
-                        f"Hairstyle: {style_name}"
-                    )
-                    style_image_descriptions.append({
-                        "style_name": style_name,
-                        "image_style_description": image_desc.strip()
+                # --- Generate content ---
+                if not is_food_love:
+                    # =========================
+                    # NORMAL BEHAVIOR (existing)
+                    # =========================
+                    content = gpt_content(
+                        (
+                            "You are a helpful assistant that generates detailed style descriptions. "
+                            "Use <h2> HTML headings for each style section, followed by paragraphs. "
+                            f"Do not use markdown. Generate exactly {version_count} unique hairstyles."
+                        ),
+                        fill_prompt(prompt.style_prompt)
+                    ) or ""
+
+                    style_blocks = extract_styles_from_html(content)
+                    style_image_descriptions = []
+                    for block in style_blocks:
+                        style_name = block.get("style_name", "")
+                        if not style_name:
+                            continue
+                        image_desc = gpt_content(
+                            "You are an editorial stylist creating image descriptions for a fashion AI. "
+                            "Write a visual description of the haircut below in 35–60 words. "
+                            "Include hair length, texture, shape, sides, top, and camera angle.",
+                            f"Hairstyle: {style_name}"
+                        )
+                        style_image_descriptions.append({
+                            "style_name": style_name,
+                            "image_style_description": (image_desc or "").strip()
+                        })
+
+                    style_dict = {item["style_name"]: item["image_style_description"] for item in style_image_descriptions}
+
+                    post.style_image_descriptions = style_dict
+                    post.generated_style_section = content
+                    post.style_images_status = 'in_process'
+                    post.style_images = {}
+                    post.style_prompts = None
+                    post.save()
+
+                    threading.Thread(
+                        target=generate_post_images_task,
+                        args=(post.id,),
+                        kwargs={'only_style': True},
+                        daemon=True
+                    ).start()
+
+                    return JsonResponse({'success': True, 'message': 'Style section regenerated.', 'content': post.generated_style_section})
+
+                else:
+                    # =========================
+                    # FOOD LOVE BEHAVIOR
+                    # =========================
+                    content = gpt_content(
+                        foodlove_sys,
+                        fill_prompt(prompt.master_prompt or prompt.style_prompt)
+                    ) or ""
+
+                    post.generated_style_section = content
+                    post.style_image_descriptions = {}
+                    post.style_images_status = 'Not generated'
+                    post.style_images = {}
+                    post.style_prompts = None
+                    post.save()
+
+                    return JsonResponse({
+                        'success': True,
+                        'message': 'Style section regenerated (Food Love: HTML only, no images).',
+                        'content': post.generated_style_section
                     })
-                style_dict = {item["style_name"]: item["image_style_description"] for item in style_image_descriptions}
-
-                post.style_image_descriptions = style_dict
-                post.generated_style_section = content
-                post.style_images_status = 'in_process'
-                post.style_images = {}
-                post.style_prompts = None
-                post.save()
-
-                threading.Thread(
-                    target=generate_post_images_task,
-                    args=(post.id,),
-                    kwargs={'only_style': True}
-                ).start()
-
-                return JsonResponse({'success': True, 'message': 'Style section regenerated.', 'content': post.generated_style_section})
 
             elif content_type == 'conclusion':
                 content = gpt_content(
@@ -1785,41 +1945,68 @@ class PostAdmin(admin.ModelAdmin):
     # ---------------------------
     def preview_view(self, request, post_id):
         post = get_object_or_404(Post, pk=post_id)
+
+        # --- Find the most recent job tied to this post and normalize template_type ---
+        last_job = (
+            GenerationJob.objects
+            .filter(post=post)
+            .order_by('-finished_at', '-created_at')
+            .first()
+        )
+        raw_tpl = ((last_job.template_type if last_job else '') or '').strip().lower()
+        raw_tpl = raw_tpl.replace('-', ' ').replace('_', ' ')
+        if raw_tpl in ('food love', 'foodlove'):
+            job_template_type = 'food_love'
+        elif raw_tpl == 'modular':
+            job_template_type = 'modular'
+        else:
+            job_template_type = 'regular'
+
+        # --- Build style_sections only for non–Food Love ---
         style_sections = []
+        if job_template_type != 'food_love':
+            # Safely decode style_images JSON (if present)
+            style_images = getattr(post, 'style_images', {})  # may be dict or JSON string or None
+            if isinstance(style_images, str):
+                try:
+                    style_images = json.loads(style_images or "{}")
+                except json.JSONDecodeError:
+                    style_images = {}
 
-        # Safely decode style_images JSON
-        style_images = post.style_images
-        if isinstance(style_images, str):
-            try:
-                style_images = json.loads(style_images)
-            except json.JSONDecodeError:
-                style_images = {}
+            # Normalize keys for lookup consistency
+            style_images_clean = { (k or '').strip(): v for k, v in (style_images or {}).items() }
 
-        style_images_clean = {k.strip(): v for k, v in (style_images or {}).items()}
+            # Split generated_style_section into <h2> blocks
+            if post.generated_style_section:
+                headings = re.findall(r'(<h2>.*?</h2>)', post.generated_style_section, flags=re.DOTALL|re.IGNORECASE)
+                contents = re.split(r'<h2>.*?</h2>', post.generated_style_section, flags=re.DOTALL|re.IGNORECASE)[1:]
 
-        if post.generated_style_section:
-            headings = re.findall(r'(<h2>.*?</h2>)', post.generated_style_section, re.DOTALL)
-            contents = re.split(r'<h2>.*?</h2>', post.generated_style_section)[1:]
+                for i, heading in enumerate(headings):
+                    style_name = re.sub(r'<.*?>', '', heading, flags=re.DOTALL).strip()
+                    # Default placeholder unless images are still in process
+                    image_url = '/static/WordAI_Publisher/img/placeholder.png'
+                    if getattr(post, 'style_images_status', '') != 'in_process':
+                        image_url = style_images_clean.get(style_name, image_url)
 
-            for i, heading in enumerate(headings):
-                style_name = re.sub(r'<.*?>', '', heading).strip()
-                image_url = '/static/WordAI_Publisher/img/placeholder.png'
-                if post.style_images_status != 'in_process':
-                    image_url = style_images_clean.get(style_name, image_url)
-                section_content = contents[i] if i < len(contents) else ""
-                style_sections.append({
-                    'heading': mark_safe(heading),
-                    'image_url': image_url,
-                    'content': mark_safe(section_content),
-                })
+                    section_content = contents[i] if i < len(contents) else ""
+                    style_sections.append({
+                        'heading': mark_safe(heading),
+                        'image_url': image_url,
+                        'content': mark_safe(section_content),
+                    })
 
-        return render(request, 'admin/WordAI_Publisher/post_preview.html', {
-            'post': post,
-            'style_sections': style_sections,
-        })
-
-    # ---------------------------
-    # Push to WordPress (S3-safe)
+        # Render preview template with the template type from GenerationJob
+        return render(
+            request,
+            'admin/WordAI_Publisher/post_preview.html',
+            {
+                'post': post,
+                'style_sections': style_sections,
+                'job_template_type': job_template_type,  # template branches on this
+            }
+        )
+        # ---------------------------
+        # Push to WordPress (S3-safe)
     # ---------------------------
     def push_to_wordpress(self, request, post_id):
         post = get_object_or_404(Post, pk=post_id)
@@ -1836,10 +2023,14 @@ class PostAdmin(admin.ModelAdmin):
     push_selected_to_wordpress.short_description = "Push selected posts to WordPress"
 
     def _push_post_to_wordpress(self, post, request=None, silent=False):
+        import os, re, json, threading, requests
+        from django.contrib import messages
+
+        # === Basics ===
         title_content_plain = re.sub(r'<[^>]*>', '', post.generated_title or '').strip()
         combined_content = f"{post.generated_intro or ''}\n\n{post.generated_style_section or ''}\n\n{post.generated_conclusion or ''}"
-        wordpress_api_url = settings.WORDPRESS_API_URL
 
+        # Determine template_type from latest GenerationJob (fallback to post.template_type)
         tmpl_type = ''
         gj = (
             GenerationJob.objects
@@ -1853,10 +2044,44 @@ class PostAdmin(admin.ModelAdmin):
         else:
             tmpl_type = (getattr(post, 'template_type', '') or '').strip().lower()
 
-        is_modular = (tmpl_type == 'modular')
-        print('template_type:', tmpl_type, 'is_modular:', is_modular)
+        norm = tmpl_type.replace('-', ' ').replace('_', ' ')
+        is_foodlove = norm in ('food love', 'foodlove')
+        is_modular = (norm == 'modular')
+        print('template_type:', tmpl_type, 'is_modular:', is_modular, 'is_foodlove:', is_foodlove)
 
-        # === STEP 1: Upload Featured Image ===
+        # === Select endpoints + token from env-backed settings ===
+        if is_foodlove:
+            wordpress_api_url = getattr(settings, 'FOODLOVE_API_URL', '')
+            media_endpoint     = getattr(settings, 'FOODLOVE_API_URL_MEDIA', '')
+            jwt_token          = getattr(settings, 'FOODLOVE_JWT_TOKEN', '')
+        else:
+            wordpress_api_url = getattr(settings, 'WORDPRESS_API_URL', '')
+            media_endpoint     = getattr(settings, 'WORDPRESS_API_URL_MEDIA', '')
+            jwt_token          = getattr(settings, 'WORDPRESS_JWT_TOKEN', '')
+
+        if not wordpress_api_url or not media_endpoint:
+            if not silent:
+                self.message_user(
+                    request,
+                    "Missing WordPress API env vars for this template type.",
+                    level=messages.ERROR
+                )
+            return False
+
+        # Build headers for the chosen site
+        post_headers = {
+            "Authorization": f"Bearer {jwt_token}" if jwt_token else "",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0",
+        }
+        media_headers = {
+            "Authorization": f"Bearer {jwt_token}" if jwt_token else "",
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json",
+        }
+
+        # === STEP 1: Upload Featured Image (allowed for both sites) ===
         image_id = None
         try:
             if post.featured_image:
@@ -1864,21 +2089,63 @@ class PostAdmin(admin.ModelAdmin):
                 content_type = _guess_ct(filename) or "image/jpeg"
                 with post.featured_image.open("rb") as fh:
                     files = {"file": (filename, fh, content_type)}
-                    r = requests.post(_wp_media_endpoint(), headers=_wp_headers(), files=files, timeout=120)
+                    r = requests.post(media_endpoint, headers=media_headers, files=files, timeout=120)
                 if r.status_code == 201:
                     image_id = r.json().get('id')
                 elif not silent:
-                    self.message_user(request, f"Featured image upload failed: {r.status_code} {r.text}", level=messages.ERROR)
+                    self.message_user(
+                        request,
+                        f"Featured image upload failed: {r.status_code} {r.text}",
+                        level=messages.ERROR
+                    )
         except Exception as e:
             if not silent:
                 self.message_user(request, f"Image upload exception: {e}", level=messages.ERROR)
+
+        # =========================
+        # FOOD LOVE BRANCH (simple)
+        # =========================
+        if is_foodlove:
+            # Push everything into default editor. No ACF/meta/gallery/modular images.
+            post_payload = {
+                "title": title_content_plain,
+                "status": "draft",
+                "content": combined_content,
+            }
+            if image_id:
+                post_payload["featured_media"] = image_id
+
+            try:
+                resp = requests.post(wordpress_api_url, headers=post_headers, json=post_payload, timeout=120)
+                if resp.status_code == 201:
+                    post.status = 'draft'
+                    post.save(update_fields=['status'])
+                    if not silent:
+                        self.message_user(request, "Post pushed to Food Love!", level=messages.SUCCESS)
+                    return True
+                else:
+                    if not silent:
+                        try:
+                            error_message = resp.json().get('message', resp.text)
+                        except Exception:
+                            error_message = resp.text
+                        self.message_user(request, f"Failed to push to Food Love: {error_message}", level=messages.ERROR)
+                    return False
+            except requests.exceptions.RequestException as e:
+                if not silent:
+                    self.message_user(request, f"Network/WordPress API Error (Food Love): {e}", level=messages.ERROR)
+                return False
+
+        # ============================================
+        # FASHIONBEANS BRANCH (your existing behavior)
+        # ============================================
 
         # === STEP 2: Upload Gallery Style Images (SKIP for modular) ===
         gallery_media_ids = []
         if not is_modular:
             style_images_data = post.style_images or {}   # {style_name: key_or_url}
             threads = []
-            silent = False  # or pass in
+            _silent = False  # local control within this scope
 
             def upload_image_thread(style_name, key_or_url, collected_ids):
                 try:
@@ -1886,13 +2153,7 @@ class PostAdmin(admin.ModelAdmin):
                     try:
                         content_type = _guess_ct(filename) or "image/jpeg"
                         files = {"file": (os.path.basename(filename), fobj, content_type)}
-
-                        media_headers = {
-                            "Authorization": f"Bearer {settings.WORDPRESS_JWT_TOKEN}",
-                            "User-Agent": "Mozilla/5.0",
-                            "Accept": "application/json",
-                        }
-                        rr = requests.post(_wp_media_endpoint(), headers=media_headers, files=files, timeout=120)
+                        rr = requests.post(media_endpoint, headers=media_headers, files=files, timeout=120)
                     finally:
                         try:
                             fobj.close()
@@ -1901,7 +2162,7 @@ class PostAdmin(admin.ModelAdmin):
 
                     if rr.status_code == 201:
                         collected_ids.append(rr.json().get("id"))
-                    elif not silent:
+                    elif not _silent:
                         msg = rr.text
                         try:
                             msg = rr.json()
@@ -1909,7 +2170,7 @@ class PostAdmin(admin.ModelAdmin):
                             pass
                         print(f"[Gallery] Failed to upload {style_name}: {rr.status_code} {msg}")
                 except Exception as e:
-                    if not silent:
+                    if not _silent:
                         print(f"[Gallery] Error uploading {style_name}: {e}")
 
             if isinstance(style_images_data, dict):
@@ -1924,7 +2185,6 @@ class PostAdmin(admin.ModelAdmin):
         # === STEP 2b: Upload Modular Section Images (ONLY for modular) ===
         modular_image_ids = {}  # {acf_field_name: media_id}
         if is_modular:
-            # Map: Django Post field -> current URL/value on post
             modular_sources = {
                 "generated_quick_style_snapshot_image":        getattr(post, "generated_quick_style_snapshot_image", None),
                 "generated_packing_essentials_checklist_image":getattr(post, "generated_packing_essentials_checklist_image", None),
@@ -1946,12 +2206,7 @@ class PostAdmin(admin.ModelAdmin):
                     try:
                         content_type = _guess_ct(filename) or "image/jpeg"
                         files = {"file": (os.path.basename(filename), fobj, content_type)}
-                        media_headers = {
-                            "Authorization": f"Bearer {settings.WORDPRESS_JWT_TOKEN}",
-                            "User-Agent": "Mozilla/5.0",
-                            "Accept": "application/json",
-                        }
-                        rr = requests.post(_wp_media_endpoint(), headers=media_headers, files=files, timeout=120)
+                        rr = requests.post(media_endpoint, headers=media_headers, files=files, timeout=120)
                     finally:
                         try:
                             fobj.close()
@@ -1973,19 +2228,12 @@ class PostAdmin(admin.ModelAdmin):
                     if not silent:
                         print(f"[Modular] Error uploading {acf_field_name}: {e}")
 
-            # Upload sequentially (you can thread these if you prefer)
+            # Upload sequentially (threading is fine too)
             for acf_name, src in modular_sources.items():
                 upload_modular_image(acf_name, src, modular_image_ids)
 
         # === STEP 3: Build payload (different ACF for modular) ===
-        post_headers = {
-            "Authorization": f"Bearer {settings.WORDPRESS_JWT_TOKEN}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0",
-        }
-
-        # Base ACF common fields
+        # (FashionBeans payload unchanged)
         acf_data = {
             "ai_title": post.generated_title,
             "ai_intro": post.generated_intro,
@@ -1993,9 +2241,8 @@ class PostAdmin(admin.ModelAdmin):
         }
 
         if is_modular:
-            # Send 8 separate modular text fields
             acf_data.update({
-                "field_66bb21792e74b": "single-modular-template",  # keep your template selector
+                "field_66bb21792e74b": "single-modular-template",
                 "generated_quick_style_snapshot": post.generated_quick_style_snapshot,
                 "generated_packing_essentials_checklist": post.generated_packing_essentials_checklist,
                 "generated_daytime_outfits": post.generated_daytime_outfits,
@@ -2004,9 +2251,7 @@ class PostAdmin(admin.ModelAdmin):
                 "generated_seasonal_variations": post.generated_seasonal_variations,
                 "generated_style_tips_for_blending": post.generated_style_tips_for_blending,
                 "generated_destination_specific_extras": post.generated_destination_specific_extras,
-            })
-            # NEW: include the 8 image Media IDs (if uploaded)
-            acf_data.update({
+                # include uploaded modular media IDs
                 "generated_quick_style_snapshot_image":        modular_image_ids.get("generated_quick_style_snapshot_image"),
                 "generated_packing_essentials_checklist_image":modular_image_ids.get("generated_packing_essentials_checklist_image"),
                 "generated_daytime_outfits_image":             modular_image_ids.get("generated_daytime_outfits_image"),
@@ -2036,11 +2281,11 @@ class PostAdmin(admin.ModelAdmin):
         if image_id:
             post_payload["featured_media"] = image_id
 
-        # === STEP 4: Create post ===
+        # === STEP 4: Create post (FashionBeans) ===
         try:
             resp = requests.post(wordpress_api_url, headers=post_headers, json=post_payload, timeout=120)
             if resp.status_code == 201:
-                post.status = 'draft'  # or 'publish' to mirror WP
+                post.status = 'draft'  # or 'publish'
                 post.save(update_fields=['status'])
                 if not silent:
                     self.message_user(request, "Post pushed to WordPress!", level=messages.SUCCESS)
@@ -2059,6 +2304,7 @@ class PostAdmin(admin.ModelAdmin):
                 self.message_user(request, f"Network/WordPress API Error: {e}", level=messages.ERROR)
 
         return ok
+
     # ---------------------------
     # Icons
     # ---------------------------

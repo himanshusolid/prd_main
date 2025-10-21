@@ -3,12 +3,12 @@
 <html>
 <style>
   .preview-section-image {
-  display:block;
-  margin: 12px auto 16px;
-  max-width: 100%;
-  border-radius: 8px;
-  box-shadow: 0 1px 6px rgba(0,0,0,0.06);
-}
+    display:block;
+    margin: 12px auto 16px;
+    max-width: 100%;
+    border-radius: 8px;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.06);
+  }
   .preview-article table { width:100%; border-collapse:collapse; }
   .preview-article th, .preview-article td { border:1px solid #e5e7eb; padding:10px 12px; text-align:left; }
   .preview-article th { background:#f8fafc; font-weight:600; }
@@ -53,133 +53,148 @@
       margin-top: 40px; padding-top: 18px; border-top: 1px solid #eee;
       font-size: 1.1em; color: #222; font-style: italic;
   }
-
-  /* NEW: per-section image styling */
-  .preview-section-image {
-      display:block;
-      margin: 12px auto 16px;
-      max-width: 100%;
-      border-radius: 8px;
-      box-shadow: 0 1px 6px rgba(0,0,0,0.06);
-  }
 </style>
 
-<div class="preview-article">
-  <div class="preview-title">{{ post.generated_title|safe }}</div>
+{# Use job_template_type provided by the view; default to "regular" #}
+{% with t=job_template_type|default:"regular"|lower %}
+  {% if t == 'food_love' %}
+    <!-- ================= FOOD LOVE: ONLY raw HTML, NO IMAGES ================= -->
+    <div class="preview-article" id="foodlove-article">
+      {{ post.generated_style_section|safe }}
+    </div>
 
-  {% if post.featured_image_status == 'in_process' %}
-    <img src="{% static 'WordAI_Publisher/img/placeholder.png' %}" alt="Image in process" class="placeholder-img" />
-  {% elif post.featured_image %}
-    <img src="{{ post.featured_image.url }}" alt="Featured image" class="preview-featured-image" />
-  {% endif %}
+    <script>
+      // Remove any inline images (img/figure/picture) that might be inside the saved HTML
+      document.addEventListener('DOMContentLoaded', function () {
+        var root = document.getElementById('foodlove-article');
+        if (!root) return;
+        root.querySelectorAll('img, figure, picture').forEach(function(el){ el.remove(); });
+      });
+    </script>
 
-  <div class="preview-section preview-intro">
-    {{ post.generated_intro|safe }}
-  </div>
+  {% else %}
+    <!-- ================= NON–FOOD LOVE: original preview UI ================= -->
+    <div class="preview-article">
+      <div class="preview-title">{{ post.generated_title|safe }}</div>
 
-  {# ===== Regular Style Section (unchanged) ===== #}
-  {% for section in style_sections %}
-    <div class="preview-section preview-style-section">
-      <div class="preview-style-heading">{{ section.heading|safe }}</div>
-
-      {% if section.image_url %}
-        <img src="{{ section.image_url }}" class="preview-section-image" alt="{{ section.heading|striptags }} image" />
+      {% if post.featured_image_status == 'in_process' %}
+        <img src="{% static 'WordAI_Publisher/img/placeholder.png' %}" alt="Image in process" class="placeholder-img" />
+      {% elif post.featured_image %}
+        <img src="{{ post.featured_image.url }}" alt="Featured image" class="preview-featured-image" />
       {% endif %}
 
-      <div class="preview-style-content">{{ section.content|safe }}</div>
+      <div class="preview-section preview-intro">
+        {{ post.generated_intro|safe }}
+      </div>
+
+      {# ===== Regular Style Section (unchanged) ===== #}
+      {% for section in style_sections %}
+        <div class="preview-section preview-style-section">
+          <div class="preview-style-heading">{{ section.heading|safe }}</div>
+
+          {% if section.image_url %}
+            <img src="{{ section.image_url }}" class="preview-section-image" alt="{{ section.heading|striptags }} image" />
+          {% endif %}
+
+          <div class="preview-style-content">{{ section.content|safe }}</div>
+        </div>
+      {% endfor %}
+
+      {# ===== Modular Sections (containers with data-image-url) ===== #}
+      {% if post.generated_quick_style_snapshot or post.generated_quick_style_snapshot_image %}
+        <div class="preview-section" id="sec-quick-style-snapshot"
+             data-image-url="{{ post.generated_quick_style_snapshot_image|default_if_none:'' }}">
+          {{ post.generated_quick_style_snapshot|safe }}
+        </div>
+      {% endif %}
+
+      {% if post.generated_packing_essentials_checklist or post.generated_packing_essentials_checklist_image %}
+        <div class="preview-section" id="sec-packing-essentials"
+             data-image-url="{{ post.generated_packing_essentials_checklist_image|default_if_none:'' }}">
+          {{ post.generated_packing_essentials_checklist|safe }}
+        </div>
+      {% endif %}
+
+      {% if post.generated_daytime_outfits or post.generated_daytime_outfits_image %}
+        <div class="preview-section" id="sec-daytime-outfits"
+             data-image-url="{{ post.generated_daytime_outfits_image|default_if_none:'' }}">
+          {{ post.generated_daytime_outfits|safe }}
+        </div>
+      {% endif %}
+
+      {% if post.generated_evening_and_nightlife or post.generated_evening_and_nightlife_image %}
+        <div class="preview-section" id="sec-evening-nightlife"
+             data-image-url="{{ post.generated_evening_and_nightlife_image|default_if_none:'' }}">
+          {{ post.generated_evening_and_nightlife|safe }}
+        </div>
+      {% endif %}
+
+      {% if post.generated_outdoor_activities or post.generated_outdoor_activities_image %}
+        <div class="preview-section" id="sec-outdoor-activities"
+             data-image-url="{{ post.generated_outdoor_activities_image|default_if_none:'' }}">
+          {{ post.generated_outdoor_activities|safe }}
+        </div>
+      {% endif %}
+
+      {% if post.generated_seasonal_variations or post.generated_seasonal_variations_image %}
+        <div class="preview-section" id="sec-seasonal-variations"
+             data-image-url="{{ post.generated_seasonal_variations_image|default_if_none:'' }}">
+          {{ post.generated_seasonal_variations|safe }}
+        </div>
+      {% endif %}
+
+      {% if post.generated_style_tips_for_blending or post.generated_style_tips_for_blending_image %}
+        <div class="preview-section" id="sec-style-tips-blending"
+             data-image-url="{{ post.generated_style_tips_for_blending_image|default_if_none:'' }}">
+          {{ post.generated_style_tips_for_blending|safe }}
+        </div>
+      {% endif %}
+
+      {% if post.generated_destination_specific_extras or post.generated_destination_specific_extras_image %}
+        <div class="preview-section" id="sec-destination-extras"
+             data-image-url="{{ post.generated_destination_specific_extras_image|default_if_none:'' }}">
+          {{ post.generated_destination_specific_extras|safe }}
+        </div>
+      {% endif %}
+
+      <div class="preview-conclusion">
+        {{ post.generated_conclusion|safe }}
+      </div>
     </div>
-  {% endfor %}
 
-  {# ===== Modular Sections (containers with data-image-url) ===== #}
-{% if post.generated_quick_style_snapshot or post.generated_quick_style_snapshot_image %}
-  <div class="preview-section" id="sec-quick-style-snapshot"
-       data-image-url="{{ post.generated_quick_style_snapshot_image|default_if_none:'' }}">
-    {{ post.generated_quick_style_snapshot|safe }}
-  </div>
-{% endif %}
+    <!-- Image injection script ONLY for non–Food Love -->
+    <script>
+      document.addEventListener('DOMContentLoaded', function () {
+        const ids = [
+          'sec-quick-style-snapshot',
+          'sec-packing-essentials',
+          'sec-daytime-outfits',
+          'sec-evening-nightlife',
+          'sec-outdoor-activities',
+          'sec-seasonal-variations',
+          'sec-style-tips-blending',
+          'sec-destination-extras'
+        ];
 
-{% if post.generated_packing_essentials_checklist or post.generated_packing_essentials_checklist_image %}
-  <div class="preview-section" id="sec-packing-essentials"
-       data-image-url="{{ post.generated_packing_essentials_checklist_image|default_if_none:'' }}">
-    {{ post.generated_packing_essentials_checklist|safe }}
-  </div>
-{% endif %}
+        ids.forEach(id => {
+          const sec = document.getElementById(id);
+          if (!sec) return;
+          const url = sec.dataset.imageUrl;
+          if (!url) return;
 
-{% if post.generated_daytime_outfits or post.generated_daytime_outfits_image %}
-  <div class="preview-section" id="sec-daytime-outfits"
-       data-image-url="{{ post.generated_daytime_outfits_image|default_if_none:'' }}">
-    {{ post.generated_daytime_outfits|safe }}
-  </div>
-{% endif %}
+          const img = document.createElement('img');
+          img.src = url;
+          img.alt = 'Section image';
+          img.className = 'preview-section-image';
 
-{% if post.generated_evening_and_nightlife or post.generated_evening_and_nightlife_image %}
-  <div class="preview-section" id="sec-evening-nightlife"
-       data-image-url="{{ post.generated_evening_and_nightlife_image|default_if_none:'' }}">
-    {{ post.generated_evening_and_nightlife|safe }}
-  </div>
-{% endif %}
-
-{% if post.generated_outdoor_activities or post.generated_outdoor_activities_image %}
-  <div class="preview-section" id="sec-outdoor-activities"
-       data-image-url="{{ post.generated_outdoor_activities_image|default_if_none:'' }}">
-    {{ post.generated_outdoor_activities|safe }}
-  </div>
-{% endif %}
-
-{% if post.generated_seasonal_variations or post.generated_seasonal_variations_image %}
-  <div class="preview-section" id="sec-seasonal-variations"
-       data-image-url="{{ post.generated_seasonal_variations_image|default_if_none:'' }}">
-    {{ post.generated_seasonal_variations|safe }}
-  </div>
-{% endif %}
-
-{% if post.generated_style_tips_for_blending or post.generated_style_tips_for_blending_image %}
-  <div class="preview-section" id="sec-style-tips-blending"
-       data-image-url="{{ post.generated_style_tips_for_blending_image|default_if_none:'' }}">
-    {{ post.generated_style_tips_for_blending|safe }}
-  </div>
-{% endif %}
-
-{% if post.generated_destination_specific_extras or post.generated_destination_specific_extras_image %}
-  <div class="preview-section" id="sec-destination-extras"
-       data-image-url="{{ post.generated_destination_specific_extras_image|default_if_none:'' }}">
-    {{ post.generated_destination_specific_extras|safe }}
-  </div>
-{% endif %}
-    <div class="preview-conclusion">
-      {{ post.generated_conclusion|safe }}
-    </div>
-
-<script>
-  document.addEventListener('DOMContentLoaded', function () {
-    const ids = [
-      'sec-quick-style-snapshot',
-      'sec-packing-essentials',
-      'sec-daytime-outfits',
-      'sec-evening-nightlife',
-      'sec-outdoor-activities',
-      'sec-seasonal-variations',
-      'sec-style-tips-blending',
-      'sec-destination-extras'
-    ];
-  
-    ids.forEach(id => {
-      const sec = document.getElementById(id);
-      if (!sec) return;
-      const url = sec.dataset.imageUrl;
-      if (!url) return;
-  
-      const img = document.createElement('img');
-      img.src = url;
-      img.alt = 'Section image';
-      img.className = 'preview-section-image';
-  
-      const heading = sec.querySelector('h2, h3'); // h3 fallback just in case
-      if (heading) {
-        heading.insertAdjacentElement('afterend', img);
-      } else {
-        sec.insertAdjacentElement('afterbegin', img);
-      }
-    });
-  });
-  </script>
+          const heading = sec.querySelector('h2, h3');
+          if (heading) {
+            heading.insertAdjacentElement('afterend', img);
+          } else {
+            sec.insertAdjacentElement('afterbegin', img);
+          }
+        });
+      });
+    </script>
+  {% endif %}
+{% endwith %}
