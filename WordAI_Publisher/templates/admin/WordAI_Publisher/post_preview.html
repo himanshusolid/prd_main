@@ -58,11 +58,21 @@
 {# Use job_template_type provided by the view; default to "regular" #}
 {% with t=job_template_type|default:"regular"|lower %}
   {% if t == 'food_love' %}
+  <div class="preview-article">
+
+  <div class="preview-title">{{ post.generated_title|safe }}</div>
+
+  {% if post.featured_image_status == 'in_process' %}
+  <img src="{% static 'WordAI_Publisher/img/placeholder.png' %}" alt="Image in process" class="placeholder-img" />
+  {% elif post.featured_image %}
+    <img src="{{ post.featured_image.url }}" alt="Featured image" class="preview-featured-image" />
+  {% endif %}
+
     <!-- ================= FOOD LOVE: ONLY raw HTML, NO IMAGES ================= -->
     <div class="preview-article" id="foodlove-article">
       {{ post.generated_style_section|safe }}
     </div>
-
+  </div>
     <script>
       // Remove any inline images (img/figure/picture) that might be inside the saved HTML
       document.addEventListener('DOMContentLoaded', function () {

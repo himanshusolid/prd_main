@@ -505,20 +505,24 @@ def _run_generation_job(job_id: int):
                     meta_description=meta_description,
                     status='draft',
                     content_generated='completed',
-                    featured_image_status='Not generated',
+                    featured_image_status='in_process',
                     style_images_status='Not generated',
                     # If your model has modular_images_status, keep it consistent:
                     # modular_images_status='Not generated'
                 )
                 post.save()
-
+                threading.Thread(
+                target=generate_post_images_task,
+                args=(post.id,),
+                kwargs={'only_featured': True, 'featured_prompt_text': post.featured_prompt_text}
+                 ).start()
                 # 5) Finish job WITHOUT launching image thread
                 job.post = post
                 job.status = 'done'
                 job.finished_at = timezone.now()
                 job.save(update_fields=['post', 'status', 'finished_at'])
                 return
-
+          
             # ========= DEFAULT MASTER (existing JSON flow) =========
             system_prompt = (
                 "You are a professional SEO and content writer who returns STRICT JSON output for a blog article."
