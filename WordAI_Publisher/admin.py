@@ -313,6 +313,7 @@ def _run_generation_job(job_id: int):
                         meta_title = ''
                         meta_description = meta_json or ''
 
+                
                 # 5) Save. Reuse generated_style_section to store the modular HTML,
                 #    or add a new column if you prefer (generated_packing_guide).
                 post = Post.objects.create(
@@ -342,8 +343,12 @@ def _run_generation_job(job_id: int):
 
                 )
                 post.save()
-                threading.Thread(target=generate_post_images_task, args=(post.id,), daemon=True).start()
-
+                threading.Thread(
+                    target=generate_post_images_task,
+                    args=(post.id,),
+                    kwargs={"only_featured": True, "only_sections": True},
+                    daemon=True
+                ).start()
             # =================== NON-MODULAR INDIVIDUAL FLOW (UNCHANGED) ===================
             else:
                 title_prompt = fill_prompt(getattr(pr, 'title_prompt', ''))
@@ -462,11 +467,21 @@ def _run_generation_job(job_id: int):
                 )
                 master_prompt_text = fill_prompt(getattr(pr, 'master_prompt', ''))
                 full_html = gpt_content(client, foodlove_sys, master_prompt_text) or ""
+                foodlove_card_prompt  = fill_prompt(getattr(pr, 'foodlove_card_prompt', ''))
+                title_prompt = fill_prompt(getattr(pr, 'title_prompt', ''))
+
+
 
                 # 2) Meta data (reuse the SAME feature/path used elsewhere)
                 meta_title = ''
                 meta_description = ''
                 meta_data_prompt = fill_prompt(getattr(pr, 'meta_data_prompt', ''))
+                generated_foodlove_card_json = gpt_content(
+                    client,
+                    "",
+                    foodlove_card_prompt
+                ) or ""
+          
                 if meta_data_prompt:
                     meta_json = gpt_content(
                         client,
@@ -493,16 +508,17 @@ def _run_generation_job(job_id: int):
 
                 # 4) Create post (NO images)
                 post = Post.objects.create(
+                    generated_title=title_prompt,
                     keyword=job.keyword,
                     prompt=pr,
                     model_info=model_info,
                     version=job.version_count,
-                    generated_title=generated_title,
                     generated_intro="",                       # not needed; content is in full HTML
                     generated_style_section=full_html,        # store the whole HTML here
                     generated_conclusion="",                  # not needed; already in HTML
                     meta_title=meta_title,
                     meta_description=meta_description,
+                    foodlove_card_json=generated_foodlove_card_json,
                     status='draft',
                     content_generated='completed',
                     featured_image_status='in_process',
@@ -719,7 +735,7 @@ class PromptAdmin(admin.ModelAdmin):
                 'packing_essentials_checklist_prompt', 'packing_essentials_checklist_image_prompt',
                 'style_tips_for_blending_prompt', 'style_tips_for_blending_image_prompt',
                 'destination_specific_extras_prompt', 'destination_specific_extras_image_prompt',
-
+                'foodlove_card_prompt',
                 'conclusion_prompt', 'meta_data_prompt',
                 'featured_image_prompt', 'image_prompt',
             ),
@@ -2033,6 +2049,13 @@ class PostAdmin(admin.ModelAdmin):
         # === Basics ===
         title_content_plain = re.sub(r'<[^>]*>', '', post.generated_title or '').strip()
         combined_content = f"{post.generated_intro or ''}\n\n{post.generated_style_section or ''}\n\n{post.generated_conclusion or ''}"
+        raw = post.foodlove_card_json  # stored as text
+
+        # Turn the JSON string into a Python dict
+        if isinstance(raw, str) and raw.strip():
+            foodlove_json = json.loads(raw)
+        else:
+            foodlove_json = {}  # fallback if empty / None
 
         # Determine template_type from latest GenerationJob (fallback to post.template_type)
         tmpl_type = ''
@@ -2115,7 +2138,9 @@ class PostAdmin(admin.ModelAdmin):
                 "title": title_content_plain,
                 "status": "draft",
                 "content": combined_content,
+                "acf": foodlove_json,  # now a dict, not a string
             }
+            print('post_payload:', post_payload)
             if image_id:
                 post_payload["featured_media"] = image_id
 

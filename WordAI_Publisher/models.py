@@ -71,8 +71,7 @@ class Prompt(models.Model):
 
     destination_specific_extras_prompt = models.TextField(blank=True, null=True)
     destination_specific_extras_image_prompt = models.TextField(blank=True, null=True)
-
-
+    foodlove_card_prompt = models.TextField(blank=True, null=True)
     conclusion_prompt = models.TextField(blank=True, null=True)
     meta_data_prompt = models.TextField(blank=True, null=True)
     featured_image_prompt = models.TextField(blank=True, null=True)
@@ -129,7 +128,7 @@ class Post(models.Model):
 
     generated_destination_specific_extras = models.TextField(blank=True, null=True)
     generated_destination_specific_extras_image = models.TextField(blank=True, null=True)
-
+    foodlove_card_json = models.TextField(blank=True, null=True)
     generated_conclusion = models.TextField(blank=True, null=True)
     meta_title = models.TextField(blank=True, null=True)
     meta_description = models.TextField(blank=True, null=True)
@@ -142,7 +141,7 @@ class Post(models.Model):
         ('draft', 'Draft'),
         ('pushed', 'Pushed'),
         # Add more statuses if needed
-    ]
+    ] 
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
