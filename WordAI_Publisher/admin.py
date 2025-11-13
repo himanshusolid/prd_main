@@ -469,7 +469,9 @@ def _run_generation_job(job_id: int):
                 full_html = gpt_content(client, foodlove_sys, master_prompt_text) or ""
                 foodlove_card_prompt  = fill_prompt(getattr(pr, 'foodlove_card_prompt', ''))
                 title_prompt = fill_prompt(getattr(pr, 'title_prompt', ''))
-
+                generated_title = gpt_content(client, "", title_prompt)
+                if generated_title:
+                    generated_title = generated_title.strip().strip('"').strip("'")
 
 
                 # 2) Meta data (reuse the SAME feature/path used elsewhere)
@@ -508,7 +510,7 @@ def _run_generation_job(job_id: int):
 
                 # 4) Create post (NO images)
                 post = Post.objects.create(
-                    generated_title=title_prompt,
+                    generated_title=generated_title,
                     keyword=job.keyword,
                     prompt=pr,
                     model_info=model_info,
