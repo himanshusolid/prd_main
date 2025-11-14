@@ -12,7 +12,6 @@ from django.db.models import JSONField  # ✅ Works with MySQL (Django 3.1+)
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 from django.http import HttpResponseRedirect
-from WordAI_Publisher.models import GenerationJob  # adjust import path if different
 
 import base64
 import csv
@@ -40,8 +39,6 @@ from .admin_forms import CSVUploadForm, PostAdminForm
 # =============== Simple FIFO queue worker (single-thread) ===============
 _worker_guard = threading.Lock()
 _worker_thread = None
-    # Whitelist of the 8 new section image prompt keys
-# Map prompt keys -> section image field names
 SECTION_PROMPT_KEYS = {
     "quick_style_snapshot_image_prompt",
     "packing_essentials_checklist_image_prompt",
@@ -63,8 +60,6 @@ PROMPT_TO_SECTION_FIELD = {
     "style_tips_for_blending_image_prompt":       "generated_style_tips_for_blending_image",
     "destination_specific_extras_image_prompt":   "generated_destination_specific_extras_image",
 }
-
-
 def _ensure_worker_running():
     """Start a single background worker to drain the queue."""
     global _worker_thread
@@ -182,6 +177,7 @@ def top_up_missing_styles(client, system_prompt, base_style_prompt, have_titles,
     return extract_styles_from_html(more_html)
 
 
+# =============== Main worker ===============
 def _run_generation_job(job_id: int):
     """Process a single queued job."""
     client = _gpt_client()
@@ -244,6 +240,7 @@ def _run_generation_job(job_id: int):
             return ensure_h2(title, body)
 
         pr = job.prompt
+        template_type = str(getattr(job, 'template_type', '') or '').strip().lower()
 
         # ---------------------------------------------------------------------
         # INDIVIDUAL FLOW
@@ -251,7 +248,7 @@ def _run_generation_job(job_id: int):
         if job.prompt_type == 'individual':
 
             # =================== MODULAR BRANCH USING 8 PROMPTS ===================
-            if str(getattr(job, 'template_type', '')).lower() == 'modular':
+            if template_type == 'modular':
                 # 1) Read and fill all eight prompts
                 p_quick   = fill_prompt(getattr(pr, 'quick_style_snapshot_prompt', ''))
                 p_pack    = fill_prompt(getattr(pr, 'packing_essentials_checklist_prompt', ''))
@@ -272,7 +269,7 @@ def _run_generation_job(job_id: int):
                 sec_blend  = gen_section("Style Tips for Blending", p_blend, mode="prose")
                 sec_extra  = gen_section("Destination Specific Extras", p_extra, mode="prose")
 
-                # 3) Assemble in the intended order
+                # 3) Assemble in the intended order (optional, if you need it elsewhere)
                 modular_html = "\n\n".join([
                     s for s in [
                         sec_quick, sec_pack, sec_day, sec_eve,
@@ -280,7 +277,7 @@ def _run_generation_job(job_id: int):
                     ] if s
                 ])
 
-                # 4) You can still generate the usual title/intro/conclusion/meta
+                # 4) Usual title/intro/conclusion/meta
                 title_prompt      = fill_prompt(getattr(pr, 'title_prompt', ''))
                 intro_prompt      = fill_prompt(getattr(pr, 'intro_prompt', ''))
                 conclusion_prompt = fill_prompt(getattr(pr, 'conclusion_prompt', ''))
@@ -313,9 +310,6 @@ def _run_generation_job(job_id: int):
                         meta_title = ''
                         meta_description = meta_json or ''
 
-                
-                # 5) Save. Reuse generated_style_section to store the modular HTML,
-                #    or add a new column if you prefer (generated_packing_guide).
                 post = Post.objects.create(
                     keyword=job.keyword,
                     prompt=pr,
@@ -323,7 +317,6 @@ def _run_generation_job(job_id: int):
                     version=job.version_count,
                     generated_title=generated_title,
                     generated_intro=generated_intro,
-                    # ── Modular sections mapped 1:1 ──
                     generated_quick_style_snapshot=sec_quick or "",
                     generated_packing_essentials_checklist=sec_pack or "",
                     generated_daytime_outfits=sec_day or "",
@@ -339,8 +332,8 @@ def _run_generation_job(job_id: int):
                     content_generated='completed',
                     featured_image_status='in_process',
                     style_images_status='Not generated',
-                    modular_images_status = 'in_process'
-
+                    modular_images_status='in_process',
+                    foodlove_card_json=""  # not a FoodLove job
                 )
                 post.save()
                 threading.Thread(
@@ -349,7 +342,116 @@ def _run_generation_job(job_id: int):
                     kwargs={"only_featured": True, "only_sections": True},
                     daemon=True
                 ).start()
-            # =================== NON-MODULAR INDIVIDUAL FLOW (UNCHANGED) ===================
+
+            # =================== FOOD LOVE BRANCH ===================
+            elif template_type in ('food love', 'food_love', 'foodlove'):
+
+                title_prompt = fill_prompt(getattr(pr, 'title_prompt', ''))
+                intro_prompt = fill_prompt(getattr(pr, 'intro_prompt', ''))
+                style_prompt = fill_prompt(getattr(pr, 'style_prompt', ''))
+                conclusion_prompt = fill_prompt(getattr(pr, 'conclusion_prompt', ''))
+                meta_data_prompt = fill_prompt(getattr(pr, 'meta_data_prompt', ''))
+
+                generated_title = gpt_content(client, "", title_prompt)
+                if generated_title:
+                    generated_title = generated_title.strip().strip('"').strip("'")
+
+                generated_intro = gpt_content(
+                    client,
+                    "",
+                    intro_prompt
+                )
+
+                style_sys = (
+                    "Do not use markdown."
+                )
+                generated_style_section = gpt_content(
+                    client,
+                    style_sys,
+                    style_prompt
+                )
+
+                style_blocks = extract_styles_from_html(generated_style_section)
+                missing = job.version_count - len(style_blocks)
+                if missing > 0:
+                    more_blocks = top_up_missing_styles(
+                        client=client,
+                        system_prompt=style_sys,
+                        base_style_prompt=style_prompt,
+                        have_titles=_titles_set(style_blocks),
+                        need_count=missing
+                    )
+                    style_blocks.extend(more_blocks)
+
+                style_blocks = uniquify_titles(style_blocks)
+                if len(style_blocks) > job.version_count:
+                    style_blocks = style_blocks[:job.version_count]
+
+                style_image_descriptions = []
+                for block in style_blocks:
+                    style_name = block["style_name"]
+                    image_desc = gpt_content(
+                        client,
+                        "You are a food editorial stylist creating image descriptions for a recipe-focused AI. Write a clear visual description for a Flavor Breakdown image for {{keyword}} in 35–60 words. Describe the layout, spices shown, textures, colors, containers, arrangement style, lighting, and camera angle.",
+                        f"Flavor Breakdown: {style_name}"
+                    )
+                    style_image_descriptions.append({
+                        "style_name": style_name,
+                        "image_style_description": (image_desc or "").strip()
+                    })
+                style_dict = {item["style_name"]: item["image_style_description"] for item in style_image_descriptions}
+                generated_style_section = "\n\n".join(b["html"] for b in style_blocks)
+
+                generated_conclusion = gpt_content(
+                    client,
+                    "",
+                    conclusion_prompt
+                )
+
+                meta_title = ''
+                meta_description = ''
+                if meta_data_prompt:
+                    meta_json = gpt_content(client, "Return JSON with meta_title and meta_description.", meta_data_prompt)
+                    try:
+                        meta_data = json.loads(meta_json)
+                        meta_title = meta_data.get('meta_title', '')
+                        meta_description = meta_data.get('meta_description', '')
+                    except Exception:
+                        meta_title = ''
+                        meta_description = meta_json
+
+                foodlove_card_prompt = fill_prompt(getattr(pr, 'foodlove_card_prompt', ''))
+                if foodlove_card_prompt:
+                    generated_foodlove_card_json = gpt_content(
+                        client,
+                        "",
+                        foodlove_card_prompt
+                    ) or ""
+                else:
+                    generated_foodlove_card_json = ""
+
+                post = Post.objects.create(
+                    keyword=job.keyword,
+                    prompt=pr,
+                    model_info=model_info,
+                    version=job.version_count,
+                    generated_title=generated_title,
+                    generated_intro=generated_intro,
+                    generated_style_section=generated_style_section,
+                    generated_conclusion=generated_conclusion,
+                    foodlove_card_json=generated_foodlove_card_json,
+                    meta_title=meta_title,
+                    meta_description=meta_description,
+                    status='draft',
+                    content_generated='completed',
+                    featured_image_status='in_process',
+                    style_images_status='in_process',
+                    style_image_descriptions=style_dict
+                )
+                post.save()
+                threading.Thread(target=generate_post_images_task, args=(post.id,), daemon=True).start()
+
+            # =================== REGULAR BRANCH ===================
             else:
                 title_prompt = fill_prompt(getattr(pr, 'title_prompt', ''))
                 intro_prompt = fill_prompt(getattr(pr, 'intro_prompt', ''))
@@ -444,7 +546,8 @@ def _run_generation_job(job_id: int):
                     content_generated='completed',
                     featured_image_status='in_process',
                     style_images_status='in_process',
-                    style_image_descriptions=style_dict
+                    style_image_descriptions=style_dict,
+                    foodlove_card_json=""  # explicitly blank for non-FoodLove
                 )
                 post.save()
                 threading.Thread(target=generate_post_images_task, args=(post.id,), daemon=True).start()
@@ -453,95 +556,6 @@ def _run_generation_job(job_id: int):
         # MASTER PROMPT FLOW (UNCHANGED)
         # ---------------------------------------------------------------------
         else:
-            template_type = str(getattr(job, 'template_type', '') or '').strip().lower()
-
-            # ========= SPECIAL CASE: MASTER + FOOD LOVE =========
-            if template_type in ('food love', 'food_love', 'foodlove'):
-                # 1) Generate full HTML from the master prompt
-                foodlove_sys = (
-                    "Return raw HTML only. Never use Markdown or code fences. "
-                    "You are an experienced food editor writing for a modern lifestyle site. "
-                    "Produce a complete article in clean HTML with semantic structure: "
-                    "<h1> (optional), <h2> section headings, <p> paragraphs, and lists where useful. "
-                    "Do not include scripts, styles, or external assets."
-                )
-                master_prompt_text = fill_prompt(getattr(pr, 'master_prompt', ''))
-                full_html = gpt_content(client, foodlove_sys, master_prompt_text) or ""
-                foodlove_card_prompt  = fill_prompt(getattr(pr, 'foodlove_card_prompt', ''))
-                title_prompt = fill_prompt(getattr(pr, 'title_prompt', ''))
-                generated_title = gpt_content(client, "", title_prompt)
-                if generated_title:
-                    generated_title = generated_title.strip().strip('"').strip("'")
-
-
-                # 2) Meta data (reuse the SAME feature/path used elsewhere)
-                meta_title = ''
-                meta_description = ''
-                meta_data_prompt = fill_prompt(getattr(pr, 'meta_data_prompt', ''))
-                generated_foodlove_card_json = gpt_content(
-                    client,
-                    "",
-                    foodlove_card_prompt
-                ) or ""
-          
-                if meta_data_prompt:
-                    meta_json = gpt_content(
-                        client,
-                        "Return JSON with meta_title and meta_description.",
-                        meta_data_prompt
-                    )
-                    try:
-                        meta_data = json.loads(meta_json or "{}")
-                        meta_title = meta_data.get('meta_title', '') or ''
-                        meta_description = meta_data.get('meta_description', '') or ''
-                    except Exception:
-                        # Fallback: if model returned plain text, keep it in description
-                        meta_title = ''
-                        meta_description = (meta_json or '').strip()
-
-                # 3) (Optional) Try to pull a title from the HTML's first <h1> if present
-                #    This is safe and doesn't conflict with meta fields.
-                def _extract_h1(html: str) -> str:
-                    import re
-                    m = re.search(r'<h1[^>]*>(.*?)</h1>', html, flags=re.I | re.S)
-                    return (m.group(1).strip() if m else '')
-
-                generated_title = _extract_h1(full_html)
-
-                # 4) Create post (NO images)
-                post = Post.objects.create(
-                    generated_title=generated_title,
-                    keyword=job.keyword,
-                    prompt=pr,
-                    model_info=model_info,
-                    version=job.version_count,
-                    generated_intro="",                       # not needed; content is in full HTML
-                    generated_style_section=full_html,        # store the whole HTML here
-                    generated_conclusion="",                  # not needed; already in HTML
-                    meta_title=meta_title,
-                    meta_description=meta_description,
-                    foodlove_card_json=generated_foodlove_card_json,
-                    status='draft',
-                    content_generated='completed',
-                    featured_image_status='in_process',
-                    style_images_status='Not generated',
-                    # If your model has modular_images_status, keep it consistent:
-                    # modular_images_status='Not generated'
-                )
-                post.save()
-                threading.Thread(
-                target=generate_post_images_task,
-                args=(post.id,),
-                kwargs={'only_featured': True, 'featured_prompt_text': post.featured_prompt_text}
-                 ).start()
-                # 5) Finish job WITHOUT launching image thread
-                job.post = post
-                job.status = 'done'
-                job.finished_at = timezone.now()
-                job.save(update_fields=['post', 'status', 'finished_at'])
-                return
-          
-            # ========= DEFAULT MASTER (existing JSON flow) =========
             system_prompt = (
                 "You are a professional SEO and content writer who returns STRICT JSON output for a blog article."
                 " Always return exactly this JSON structure: "
@@ -578,6 +592,7 @@ def _run_generation_job(job_id: int):
                 content_generated='completed',
                 featured_image_status='in_process',
                 style_images_status='in_process',
+                foodlove_card_json=""  # master prompt flow never uses FoodLove card
             )
             post.save()
             threading.Thread(target=generate_post_images_task, args=(post.id,), daemon=True).start()
@@ -594,9 +609,6 @@ def _run_generation_job(job_id: int):
         job.finished_at = timezone.now()
         job.save(update_fields=['status', 'error', 'finished_at'])
 
-# =============================================================================
-# S3/Storage + WordPress Helpers
-# =============================================================================
 
 def _wp_media_endpoint():
     """
@@ -1390,7 +1402,7 @@ class KeywordAdmin(admin.ModelAdmin):
 
             elif content_type == 'conclusion':
                 content = gpt_content(
-                    "You are a helpful assistant that generates article conclusions. Do not use markdown.",
+                    "",
                     fill_prompt(prompt.conclusion_prompt)
                 )
                 post.generated_conclusion = content
@@ -1984,38 +1996,59 @@ class PostAdmin(admin.ModelAdmin):
         else:
             job_template_type = 'regular'
 
-        # --- Build style_sections only for non–Food Love ---
+        # --- Build style_sections for ALL template types (including food_love) ---
         style_sections = []
-        if job_template_type != 'food_love':
-            # Safely decode style_images JSON (if present)
-            style_images = getattr(post, 'style_images', {})  # may be dict or JSON string or None
-            if isinstance(style_images, str):
-                try:
-                    style_images = json.loads(style_images or "{}")
-                except json.JSONDecodeError:
-                    style_images = {}
 
-            # Normalize keys for lookup consistency
-            style_images_clean = { (k or '').strip(): v for k, v in (style_images or {}).items() }
+        # Safely decode style_images JSON (if present)
+        style_images = getattr(post, 'style_images', {})  # may be dict or JSON string or None
+        if isinstance(style_images, str):
+            try:
+                style_images = json.loads(style_images or "{}")
+            except json.JSONDecodeError:
+                style_images = {}
 
-            # Split generated_style_section into <h2> blocks
-            if post.generated_style_section:
-                headings = re.findall(r'(<h2>.*?</h2>)', post.generated_style_section, flags=re.DOTALL|re.IGNORECASE)
-                contents = re.split(r'<h2>.*?</h2>', post.generated_style_section, flags=re.DOTALL|re.IGNORECASE)[1:]
+        # Normalize keys for lookup consistency
+        style_images_clean = { (k or '').strip(): v for k, v in (style_images or {}).items() }
 
-                for i, heading in enumerate(headings):
-                    style_name = re.sub(r'<.*?>', '', heading, flags=re.DOTALL).strip()
-                    # Default placeholder unless images are still in process
-                    image_url = '/static/WordAI_Publisher/img/placeholder.png'
-                    if getattr(post, 'style_images_status', '') != 'in_process':
-                        image_url = style_images_clean.get(style_name, image_url)
+        # Split generated_style_section into <h2> blocks
+        if post.generated_style_section:
+            headings = re.findall(
+                r'(<h2>.*?</h2>)',
+                post.generated_style_section,
+                flags=re.DOTALL | re.IGNORECASE
+            )
+            contents = re.split(
+                r'<h2>.*?</h2>',
+                post.generated_style_section,
+                flags=re.DOTALL | re.IGNORECASE
+            )[1:]
 
-                    section_content = contents[i] if i < len(contents) else ""
-                    style_sections.append({
-                        'heading': mark_safe(heading),
-                        'image_url': image_url,
-                        'content': mark_safe(section_content),
-                    })
+            for i, heading in enumerate(headings):
+                style_name = re.sub(r'<.*?>', '', heading, flags=re.DOTALL).strip()
+
+                # Default placeholder unless images are still in process
+                image_url = '/static/WordAI_Publisher/img/placeholder.png'
+                if getattr(post, 'style_images_status', '') != 'in_process':
+                    image_url = style_images_clean.get(style_name, image_url)
+
+                section_content = contents[i] if i < len(contents) else ""
+                style_sections.append({
+                    'heading': mark_safe(heading),
+                    'image_url': image_url,
+                    'content': mark_safe(section_content),
+                })
+
+        # --- Decode foodlove_card_json for Food Love posts ---
+        raw_foodlove = getattr(post, 'foodlove_card_json', None)
+        foodlove_card = {}
+        if isinstance(raw_foodlove, dict):
+            # JSONField case – already a dict
+            foodlove_card = raw_foodlove
+        elif isinstance(raw_foodlove, str) and raw_foodlove.strip():
+            try:
+                foodlove_card = json.loads(raw_foodlove)
+            except json.JSONDecodeError:
+                foodlove_card = {}
 
         # Render preview template with the template type from GenerationJob
         return render(
@@ -2024,11 +2057,12 @@ class PostAdmin(admin.ModelAdmin):
             {
                 'post': post,
                 'style_sections': style_sections,
-                'job_template_type': job_template_type,  # template branches on this
+                'job_template_type': job_template_type,
+                'foodlove_card': foodlove_card,   # <— use this in template
             }
         )
-        # ---------------------------
-        # Push to WordPress (S3-safe)
+
+
     # ---------------------------
     def push_to_wordpress(self, request, post_id):
         post = get_object_or_404(Post, pk=post_id)
