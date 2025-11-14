@@ -2087,11 +2087,15 @@ class PostAdmin(admin.ModelAdmin):
         combined_content = f"{post.generated_intro or ''}\n\n{post.generated_style_section or ''}\n\n{post.generated_conclusion or ''}"
         raw = post.foodlove_card_json  # stored as text
 
-        # Turn the JSON string into a Python dict
+        # Convert JSON string → dict
         if isinstance(raw, str) and raw.strip():
-            foodlove_json = json.loads(raw)
+            try:
+                foodlove_json = json.loads(raw)
+            except json.JSONDecodeError:
+                foodlove_json = {}
         else:
-            foodlove_json = {}  # fallback if empty / None
+            foodlove_json = {}
+
 
         # Determine template_type from latest GenerationJob (fallback to post.template_type)
         tmpl_type = ''
@@ -2169,13 +2173,55 @@ class PostAdmin(admin.ModelAdmin):
         # FOOD LOVE BRANCH (simple)
         # =========================
         if is_foodlove:
+            # -----------------------------
+            # 1) Extract style image URL from dict stored in DB
+            # -----------------------------
+            style_dict = post.style_images or {}   # adjust if needed
+
+            style_image_url = None
+            if isinstance(style_dict, dict) and style_dict:
+                style_image_url = next(iter(style_dict.values()))  # get the URL
+
+            # -----------------------------
+            # 2) Upload image to WordPress (INLINE)
+            # -----------------------------
+            style_image_id = None
+
+            if style_image_url:
+                try:
+                    # Download image
+                    resp = requests.get(style_image_url, timeout=60)
+                    if resp.status_code == 200:
+                        # Filename from URL
+                        filename = style_image_url.split("/")[-1] or "image.jpg"
+                        # Prepare WP upload
+                        files = {
+                            "file": (filename, resp.content, "image/jpeg")
+                        }
+                        # Upload to WP
+                        r = requests.post(media_endpoint, headers=media_headers, files=files, timeout=120)
+                        if r.status_code == 201:
+                            style_image_id = r.json().get("id")
+                        else:
+                            print(f"Image upload failed: {r.status_code} {r.text}")
+                except Exception as e:
+                    print(f"Image upload exception: {e}")
+            # -----------------------------
+            # 3) Add new keys to JSON
+            # -----------------------------
+            foodlove_json["update_introduction"] = post.generated_intro or ""
+            foodlove_json["update_flavour_breakdown_image"] = style_image_id
+            foodlove_json["update_flavour_breakdown"] = post.generated_style_section or ""
+            foodlove_json["update_conclusion"] = post.generated_conclusion or ""
+
             # Push everything into default editor. No ACF/meta/gallery/modular images.
             post_payload = {
                 "title": title_content_plain,
                 "status": "draft",
-                "content": combined_content,
+                "content": '',
                 "acf": foodlove_json,  # now a dict, not a string
             }
+            print(post_payload)
             print('post_payload:', post_payload)
             if image_id:
                 post_payload["featured_media"] = image_id
