@@ -739,8 +739,7 @@ class PromptAdmin(admin.ModelAdmin):
         }),
         ('Prompts', {
             'fields': (
-                'master_prompt', 'title_prompt', 'intro_prompt', 'style_prompt',
-
+               'template_type','master_prompt', 'title_prompt', 'intro_prompt', 'style_prompt',
                 'quick_style_snapshot_prompt', 'quick_style_snapshot_image_prompt',
                 'daytime_outfits_prompt', 'daytime_outfits_image_prompt',
                 'evening_and_nightlife_prompt', 'evening_and_nightlife_image_prompt',
@@ -762,6 +761,8 @@ class PromptAdmin(admin.ModelAdmin):
     )
     readonly_fields = ('created_at',)
 
+    class Media:
+        js =  ('WordAI_Publisher/js/prompt_template_type.js',)
 
     def get_urls(self):
         urls = super().get_urls()

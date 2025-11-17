@@ -42,6 +42,20 @@ class ModelInfo(models.Model):
 
 class Prompt(models.Model):
     prompt_id = models.CharField(max_length=255, unique=True)
+
+    TEMPLATE_TYPES = (
+    ('regular', 'HairStyles'),
+    ('modular', 'Modular'),
+    ('food_love', 'Food Love'),
+    )
+
+    prompt_id = models.CharField(max_length=100, unique=True)
+    template_type = models.CharField(
+        max_length=20,
+        choices=TEMPLATE_TYPES,
+        default='regular'
+    )
+
     master_prompt = models.TextField(blank=True, null=True)  # New field
     title_prompt = models.TextField(blank=True, null=True)
     intro_prompt = models.TextField(blank=True, null=True)
