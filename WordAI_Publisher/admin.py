@@ -36,6 +36,7 @@ from WordAI_Publisher.tasks import generate_post_images_task
 from .models import Keyword, Prompt, ModelInfo, Post, GenerationJob
 from .admin_forms import CSVUploadForm, PostAdminForm
 
+
 # =============== Simple FIFO queue worker (single-thread) ===============
 _worker_guard = threading.Lock()
 _worker_thread = None
@@ -60,6 +61,7 @@ PROMPT_TO_SECTION_FIELD = {
     "style_tips_for_blending_image_prompt":       "generated_style_tips_for_blending_image",
     "destination_specific_extras_image_prompt":   "generated_destination_specific_extras_image",
 }
+
 def _ensure_worker_running():
     """Start a single background worker to drain the queue."""
     global _worker_thread
@@ -336,12 +338,21 @@ def _run_generation_job(job_id: int):
                     foodlove_card_json=""  # not a FoodLove job
                 )
                 post.save()
-                threading.Thread(
-                    target=generate_post_images_task,
-                    args=(post.id,),
-                    kwargs={"only_featured": True, "only_sections": True},
-                    daemon=True
-                ).start()
+
+                # 🔁 OLD:
+                # threading.Thread(
+                #     target=generate_post_images_task,
+                #     args=(post.id,),
+                #     kwargs={"only_featured": True, "only_sections": True},
+                #     daemon=True
+                # ).start()
+
+                # ✅ NEW: use Celery
+                generate_post_images_task.delay(
+                    post.id,
+                    only_featured=True,
+                    only_sections=True,
+                )
 
             # =================== FOOD LOVE BRANCH ===================
             elif template_type in ('food love', 'food_love', 'foodlove'):
@@ -449,7 +460,12 @@ def _run_generation_job(job_id: int):
                     style_image_descriptions=style_dict
                 )
                 post.save()
-                threading.Thread(target=generate_post_images_task, args=(post.id,), daemon=True).start()
+
+                # 🔁 OLD:
+                # threading.Thread(target=generate_post_images_task, args=(post.id,), daemon=True).start()
+
+                # ✅ NEW:
+                generate_post_images_task.delay(post.id)
 
             # =================== REGULAR BRANCH ===================
             else:
@@ -550,7 +566,12 @@ def _run_generation_job(job_id: int):
                     foodlove_card_json=""  # explicitly blank for non-FoodLove
                 )
                 post.save()
-                threading.Thread(target=generate_post_images_task, args=(post.id,), daemon=True).start()
+
+                # 🔁 OLD:
+                # threading.Thread(target=generate_post_images_task, args=(post.id,), daemon=True).start()
+
+                # ✅ NEW:
+                generate_post_images_task.delay(post.id)
 
         # ---------------------------------------------------------------------
         # MASTER PROMPT FLOW (UNCHANGED)
@@ -595,7 +616,12 @@ def _run_generation_job(job_id: int):
                 foodlove_card_json=""  # master prompt flow never uses FoodLove card
             )
             post.save()
-            threading.Thread(target=generate_post_images_task, args=(post.id,), daemon=True).start()
+
+            # 🔁 OLD:
+            # threading.Thread(target=generate_post_images_task, args=(post.id,), daemon=True).start()
+
+            # ✅ NEW:
+            generate_post_images_task.delay(post.id)
 
         # Done
         job.post = post
@@ -609,63 +635,6 @@ def _run_generation_job(job_id: int):
         job.finished_at = timezone.now()
         job.save(update_fields=['status', 'error', 'finished_at'])
 
-
-def _wp_media_endpoint():
-    """
-    Returns the WP media endpoint. Uses settings.WORDPRESS_API_URL_MEDIA if set.
-    Otherwise derives it from WORDPRESS_API_URL (.../wp-json/wp/v2/posts -> .../media).
-    """
-    media_url = getattr(settings, "WORDPRESS_API_URL_MEDIA", None)
-    if media_url:
-        return media_url
-    base = settings.WORDPRESS_API_URL.rsplit('/posts', 1)[0]
-    return f"{base}/media"
-
-def _wp_headers():
-    # IMPORTANT: do NOT set Content-Type for file uploads; requests will set multipart/form-data.
-    return {
-        "Authorization": f"Bearer {settings.WORDPRESS_JWT_TOKEN}",
-        "Accept": "application/json",
-        "User-Agent": "Mozilla/5.0",
-    }
-
-def _guess_ct(filename: str) -> str:
-    return mimetypes.guess_type(filename)[0] or "application/octet-stream"
-
-def _open_from_storage_or_url(name_or_url: str):
-    """
-    Returns (fileobj, filename) where fileobj is a readable binary stream.
-    Supports:
-      - Absolute http(s) URLs (public or signed S3)
-      - MEDIA_URL-prefixed URLs
-      - Storage-relative keys (private S3 or other backends)
-    """
-    if not name_or_url:
-        raise ValueError("Empty image path/url")
-
-    # Absolute URL
-    if isinstance(name_or_url, str) and name_or_url.startswith(("http://", "https://")):
-        resp = requests.get(name_or_url, stream=True, timeout=60)
-        resp.raise_for_status()
-        filename = os.path.basename(urlparse(name_or_url).path) or "upload.bin"
-        bio = io.BytesIO(resp.content)
-        bio.seek(0)
-        return bio, filename
-
-    # MEDIA_URL-prefixed URL or storage key
-    storage_key = str(name_or_url).lstrip("/")
-    if getattr(settings, "MEDIA_URL", None):
-        media_path = urlparse(settings.MEDIA_URL).path
-        url_path = urlparse(storage_key).path
-        if url_path.startswith(media_path):
-            storage_key = url_path[len(media_path):].lstrip("/")
-
-    fobj = default_storage.open(storage_key, "rb")
-    filename = os.path.basename(storage_key) or "upload.bin"
-    return fobj, filename
-# =============================================================================
-# Admin: ModelInfo
-# =============================================================================
 
 @admin.register(ModelInfo)
 class ModelInfoAdmin(admin.ModelAdmin):
@@ -1054,11 +1023,11 @@ class KeywordAdmin(admin.ModelAdmin):
             post.style_images_status = 'in_process'
             post.save()
 
-            threading.Thread(
-                target=generate_post_images_task,
-                args=(post.id,),
-                kwargs={'only_style': True, 'specific_style': style_name}
-            ).start()
+            generate_post_images_task.delay(
+                post.id,
+                only_style=True,
+                specific_style=style_name,
+            )
 
             return JsonResponse({'success': True, 'message': f'Style "{style_name}" regeneration started.'})
         return JsonResponse({'success': False, 'message': 'Invalid request.'})
@@ -1369,13 +1338,11 @@ class KeywordAdmin(admin.ModelAdmin):
                     post.style_images = {}
                     post.style_prompts = None
                     post.save()
+                    generate_post_images_task.delay(
+                        post.id,
+                        only_style=True,
+                    )
 
-                    threading.Thread(
-                        target=generate_post_images_task,
-                        args=(post.id,),
-                        kwargs={'only_style': True},
-                        daemon=True
-                    ).start()
 
                     return JsonResponse({'success': True, 'message': 'Style section regenerated.', 'content': post.generated_style_section})
 
@@ -1435,11 +1402,12 @@ class KeywordAdmin(admin.ModelAdmin):
             elif content_type == 'featured_image':
                 post.featured_image_status = 'in_process'
                 post.save()
-                threading.Thread(
-                    target=generate_post_images_task,
-                    args=(post.id,),
-                    kwargs={'only_featured': True, 'featured_prompt_text': post.featured_prompt_text}
-                ).start()
+                generate_post_images_task.delay(
+                    post.id,
+                    only_featured=True,
+                    featured_prompt_text=post.featured_prompt_text,
+                )
+
                 return JsonResponse({'success': True, 'message': 'Featured image regeneration started.', 'status': post.featured_image_status})
             
             elif content_type == 'generated_quick_style_snapshot_image':
@@ -1447,11 +1415,12 @@ class KeywordAdmin(admin.ModelAdmin):
                 setattr(post, status_field, 'in_process')
                 setattr(post, content_type, None)  # 👈 clear only this field
                 post.save(update_fields=[content_type, status_field])
-                threading.Thread(
-                    target=generate_post_images_task,
-                    args=(post.id,),
-                    kwargs={'only_sections': True, 'sections': ['generated_quick_style_snapshot_image']},
-                ).start()
+                generate_post_images_task.delay(
+                    post.id,
+                    only_sections=True,
+                    sections=['generated_quick_style_snapshot_image'],
+                )
+
                 return JsonResponse({'success': True, 'message': 'Quick Style Snapshot image regeneration started.', 'status': getattr(post, status_field)})
 
             elif content_type == 'generated_packing_essentials_checklist_image':
@@ -1459,11 +1428,12 @@ class KeywordAdmin(admin.ModelAdmin):
                 setattr(post, status_field, 'in_process')
                 setattr(post, content_type, None)  # 👈 clear only this field
                 post.save(update_fields=[content_type, status_field])
-                threading.Thread(
-                    target=generate_post_images_task,
-                    args=(post.id,),
-                    kwargs={'only_sections': True, 'sections': ['generated_packing_essentials_checklist_image']},
-                ).start()
+                generate_post_images_task.delay(
+                    post.id,
+                    only_sections=True,
+                    sections=['generated_packing_essentials_checklist_image'],
+                )
+
                 return JsonResponse({'success': True, 'message': 'Packing Essentials image regeneration started.', 'status': getattr(post, status_field)})
 
             elif content_type == 'generated_daytime_outfits_image':
@@ -1471,11 +1441,12 @@ class KeywordAdmin(admin.ModelAdmin):
                 setattr(post, status_field, 'in_process')
                 setattr(post, content_type, None)  # 👈 clear only this field
                 post.save(update_fields=[content_type, status_field])
-                threading.Thread(
-                    target=generate_post_images_task,
-                    args=(post.id,),
-                    kwargs={'only_sections': True, 'sections': ['generated_daytime_outfits_image']},
-                ).start()
+                generate_post_images_task.delay(
+                    post.id,
+                    only_sections=True,
+                    sections=['generated_daytime_outfits_image'],
+                )
+
                 return JsonResponse({'success': True, 'message': 'Daytime Outfits image regeneration started.', 'status': getattr(post, status_field)})
 
             elif content_type == 'generated_evening_and_nightlife_image':
@@ -1483,11 +1454,12 @@ class KeywordAdmin(admin.ModelAdmin):
                 setattr(post, status_field, 'in_process')
                 setattr(post, content_type, None)  # 👈 clear only this field
                 post.save(update_fields=[content_type, status_field])
-                threading.Thread(
-                    target=generate_post_images_task,
-                    args=(post.id,),
-                    kwargs={'only_sections': True, 'sections': ['generated_evening_and_nightlife_image']},
-                ).start()
+                generate_post_images_task.delay(
+                    post.id,
+                    only_sections=True,
+                    sections=['generated_evening_and_nightlife_image'],
+                )
+
                 return JsonResponse({'success': True, 'message': 'Evening & Nightlife image regeneration started.', 'status': getattr(post, status_field)})
 
             elif content_type == 'generated_outdoor_activities_image':
@@ -1495,11 +1467,12 @@ class KeywordAdmin(admin.ModelAdmin):
                 setattr(post, status_field, 'in_process')
                 setattr(post, content_type, None)  # 👈 clear only this field
                 post.save(update_fields=[content_type, status_field])
-                threading.Thread(
-                    target=generate_post_images_task,
-                    args=(post.id,),
-                    kwargs={'only_sections': True, 'sections': ['generated_outdoor_activities_image']},
-                ).start()
+                generate_post_images_task.delay(
+                    post.id,
+                    only_sections=True,
+                    sections=['generated_outdoor_activities_image'],
+                )
+
                 return JsonResponse({'success': True, 'message': 'Outdoor Activities image regeneration started.', 'status': getattr(post, status_field)})
 
             elif content_type == 'generated_seasonal_variations_image':
@@ -1507,11 +1480,12 @@ class KeywordAdmin(admin.ModelAdmin):
                 setattr(post, status_field, 'in_process')
                 setattr(post, content_type, None)  # 👈 clear only this field
                 post.save(update_fields=[content_type, status_field])
-                threading.Thread(
-                    target=generate_post_images_task,
-                    args=(post.id,),
-                    kwargs={'only_sections': True, 'sections': ['generated_seasonal_variations_image']},
-                ).start()
+                generate_post_images_task.delay(
+                    post.id,
+                    only_sections=True,
+                    sections=['generated_seasonal_variations_image'],
+                )
+
                 return JsonResponse({'success': True, 'message': 'Seasonal Variations image regeneration started.', 'status': getattr(post, status_field)})
 
             elif content_type == 'generated_style_tips_for_blending_image':
@@ -1519,11 +1493,12 @@ class KeywordAdmin(admin.ModelAdmin):
                 setattr(post, status_field, 'in_process')
                 setattr(post, content_type, None)  # 👈 clear only this field
                 post.save(update_fields=[content_type, status_field])
-                threading.Thread(
-                    target=generate_post_images_task,
-                    args=(post.id,),
-                    kwargs={'only_sections': True, 'sections': ['generated_style_tips_for_blending_image']},
-                ).start()
+                generate_post_images_task.delay(
+                    post.id,
+                    only_sections=True,
+                    sections=['generated_style_tips_for_blending_image'],
+                )
+
                 return JsonResponse({'success': True, 'message': 'Style Tips for Blending image regeneration started.', 'status': getattr(post, status_field)})
 
             elif content_type == 'generated_destination_specific_extras_image':
@@ -1531,11 +1506,12 @@ class KeywordAdmin(admin.ModelAdmin):
                 setattr(post, status_field, 'in_process')
                 setattr(post, content_type, None)  # 👈 clear only this field
                 post.save(update_fields=[content_type, status_field])
-                threading.Thread(
-                    target=generate_post_images_task,
-                    args=(post.id,),
-                    kwargs={'only_sections': True, 'sections': ['generated_destination_specific_extras_image']},
-                ).start()
+                generate_post_images_task.delay(
+                    post.id,
+                    only_sections=True,
+                    sections=['generated_destination_specific_extras_image'],
+                )
+
                 return JsonResponse({'success': True, 'message': 'Destination-Specific Extras image regeneration started.', 'status': getattr(post, status_field)})
 
 
@@ -1544,11 +1520,12 @@ class KeywordAdmin(admin.ModelAdmin):
                 post.style_images = {}
                 post.style_prompts = None
                 post.save()
-                threading.Thread(
-                    target=generate_post_images_task,
-                    args=(post.id,),
-                    kwargs={'only_style': True, 'style_prompts': post.style_prompts}
-                ).start()
+                generate_post_images_task.delay(
+                    post.id,
+                    only_style=True,
+                    style_prompts_override=post.style_prompts,
+                )
+
                 return JsonResponse({'success': True, 'message': 'Style images regeneration started.', 'status': post.style_images_status})
 
             else:
@@ -1912,7 +1889,7 @@ class KeywordAdmin(admin.ModelAdmin):
             )
             post.save()
 
-            threading.Thread(target=generate_post_images_task, args=(post.id,)).start()
+            generate_post_images_task.delay(post.id)
             count += 1
 
         self.message_user(
@@ -2285,14 +2262,17 @@ class PostAdmin(admin.ModelAdmin):
                     if not _silent:
                         print(f"[Gallery] Error uploading {style_name}: {e}")
 
+            results = []
+
             if isinstance(style_images_data, dict):
                 for style_name, key_or_url in style_images_data.items():
-                    t = threading.Thread(target=upload_image_thread, args=(style_name, key_or_url, gallery_media_ids))
-                    t.start()
-                    threads.append(t)
+                    res = upload_image_task.delay(style_name, key_or_url, gallery_media_ids)
+                    results.append(res)
 
-            for t in threads:
-                t.join()
+            # Wait for all tasks to finish
+            for res in results:
+                res.get()   # .get() blocks until the task completes
+
 
         # === STEP 2b: Upload Modular Section Images (ONLY for modular) ===
         modular_image_ids = {}  # {acf_field_name: media_id}
@@ -2465,11 +2445,11 @@ class PostAdmin(admin.ModelAdmin):
         for post in queryset:
             post.featured_image_status = 'in_process'
             post.save()
-            threading.Thread(
-                target=generate_post_images_task,
-                args=(post.id,),
-                kwargs={'only_featured': True}
-            ).start()
+            generate_post_images_task.delay(
+                post.id,
+                only_featured=True,
+            )
+
             count += 1
         self.message_user(
             request,
@@ -2483,11 +2463,11 @@ class PostAdmin(admin.ModelAdmin):
         for post in queryset:
             post.style_images_status = 'in_process'
             post.save()
-            threading.Thread(
-                target=generate_post_images_task,
-                args=(post.id,),
-                kwargs={'only_style': True}
-            ).start()
+            generate_post_images_task.delay(
+                post.id,
+                only_style=True,
+            )
+
             count += 1
         self.message_user(
             request,
